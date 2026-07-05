@@ -6,7 +6,7 @@ The `turbo-ocr` command ships with the default install — no extras needed.
 turbo-ocr ocr page.png --output markdown
 turbo-ocr pdf doc.pdf --dpi 150 --output json
 turbo-ocr searchable-pdf doc.pdf -o out.pdf --font-path /path/to/font.ttf
-turbo-ocr searchable-pdf doc.pdf -o out.pdf --profile pdfa-4 --dpi 150
+turbo-ocr searchable-pdf doc.pdf -o out.pdf --profile pdfa-4
 turbo-ocr blocks doc.pdf
 turbo-ocr health --ready
 ```
@@ -44,10 +44,10 @@ Generate a searchable PDF with an invisible text overlay.
 | Option | Notes |
 |---|---|
 | `-o`, `--out` | output PDF path (required) |
-| `--dpi` | rasterization DPI (default `200`, or `150` with `--profile pdfa-4`) |
+| `--dpi` | rasterization DPI (default `200`) |
 | `--mode` | `ocr` · `text` · `auto` · `auto_verified` · `geometric` (default `ocr`) |
 | `--font-path` | optional custom TTF (default is the bundled glyphless font, covers all BMP) |
-| `--profile` | `standard` · `pdfa-4`; `pdfa-4` requires `turboocr[pdfa]` and defaults to 150 DPI |
+| `--profile` | `standard` · `pdfa-4`; `pdfa-4` requires `turboocr[pdfa]` |
 | `--base-url`, `--api-key` | as above |
 
 ### `turbo-ocr blocks <pdf>`

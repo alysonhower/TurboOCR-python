@@ -170,7 +170,7 @@ def test_glyphless_font_handles_non_latin_out_of_the_box() -> None:
     assert extracted.strip()
 
 
-def test_make_searchable_pdfa4_defaults_to_150_dpi(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_make_searchable_pdfa4_defaults_to_200_dpi(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, int] = {}
 
     def fake_pdfa4(
@@ -184,7 +184,7 @@ def test_make_searchable_pdfa4_defaults_to_150_dpi(monkeypatch: pytest.MonkeyPat
         return b"%PDF-2.0\n"
 
     monkeypatch.setattr(searchable_pdf_module, "_make_searchable_pdfa4", fake_pdfa4)
-    response = _pdf_response_with_text("abc", dpi=150)
+    response = _pdf_response_with_text("abc")
 
     out = make_searchable_pdf(
         b"%PDF-1.7\n",
@@ -193,7 +193,7 @@ def test_make_searchable_pdfa4_defaults_to_150_dpi(monkeypatch: pytest.MonkeyPat
     )
 
     assert out.startswith(b"%PDF-")
-    assert captured["dpi"] == 150
+    assert captured["dpi"] == 200
 
 
 def test_make_searchable_pdfa4_from_image_extracts_text() -> None:
@@ -203,7 +203,7 @@ def test_make_searchable_pdfa4_from_image_extracts_text() -> None:
                 {
                     "page": 1,
                     "page_index": 0,
-                    "dpi": 150,
+                    "dpi": 200,
                     "width": 800,
                     "height": 600,
                     "results": [
@@ -238,7 +238,7 @@ def test_make_searchable_pdfa4_from_image_extracts_text() -> None:
 
 def test_make_searchable_pdfa4_from_pdf_rasterizes_and_extracts_text() -> None:
     pdf = _blank_pdf()
-    response = _pdf_response_with_text("pdfa pdf text", dpi=150)
+    response = _pdf_response_with_text("pdfa pdf text")
 
     out = make_searchable_pdf(pdf, response, profile=SearchablePdfProfile.pdfa_4)
 
@@ -249,7 +249,7 @@ def test_make_searchable_pdfa4_from_pdf_rasterizes_and_extracts_text() -> None:
 
 
 def test_make_searchable_pdfa4_glyphless_font_handles_non_latin() -> None:
-    response = _pdf_response_with_text("héllo wörld 北京 مرحبا", dpi=150)
+    response = _pdf_response_with_text("héllo wörld 北京 مرحبا")
 
     out = make_searchable_pdf(_blank_pdf(), response, profile=SearchablePdfProfile.pdfa_4)
 
@@ -269,7 +269,7 @@ def test_make_searchable_pdfa4_missing_extra_error(
         "_load_pdfa_dependencies",
         missing_dependencies,
     )
-    response = _pdf_response_with_text("abc", dpi=150)
+    response = _pdf_response_with_text("abc")
 
     with pytest.raises(ImportError, match=r"turboocr\[pdfa\]"):
         make_searchable_pdf(

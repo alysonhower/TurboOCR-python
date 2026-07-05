@@ -33,7 +33,7 @@ on multi-MB scans.
 
 The `pdfa-4` profile uses fpdf2 to generate a new PDF/A-4 document from
 page images plus the invisible OCR text layer. PDF inputs are rendered to
-images at 150 DPI by default, so source PDF vectors, annotations, forms,
+images at 200 DPI by default, so source PDF vectors, annotations, forms,
 bookmarks, and metadata are not preserved. The bundled glyphless font is
 embedded by default. Use a PDF/A validator such as veraPDF for archival
 acceptance checks.

@@ -236,7 +236,7 @@ def test_make_searchable_pdf_default_pdfa4_dpi(
         return b"%PDF-2.0\n"
 
     route = respx.post("http://t/ocr/pdf").mock(
-        return_value=httpx.Response(200, json=_pdf_payload(dpi=150))
+        return_value=httpx.Response(200, json=_pdf_payload(dpi=200))
     )
     monkeypatch.setattr(http_client_module, "_overlay", fake_overlay)
 
@@ -247,8 +247,8 @@ def test_make_searchable_pdf_default_pdfa4_dpi(
         )
 
     assert out.startswith(b"%PDF-")
-    assert dict(route.calls.last.request.url.params)["dpi"] == "150"
-    assert captured["dpi"] == 150
+    assert dict(route.calls.last.request.url.params)["dpi"] == "200"
+    assert captured["dpi"] == 200
     assert captured["profile"] is SearchablePdfProfile.pdfa_4
 
 

@@ -678,8 +678,7 @@ class Client(_BaseClient):
             source: PDF or image bytes / path / file-like object. See
                 `ImageInput`.
             dpi: Rasterization DPI for PDF inputs and the page dimension
-                used when wrapping an image input. Defaults to `200` for
-                the standard profile and `150` for `pdfa-4`.
+                used when wrapping an image input. Defaults to `200`.
             mode: PDF reader strategy; see
                 [`recognize_pdf`][turboocr.Client.recognize_pdf]. Ignored
                 for image inputs. `None` uses the server default.

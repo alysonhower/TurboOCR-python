@@ -40,12 +40,10 @@ def test_searchable_pdf_cli_accepts_pdfa4_profile(
             str(out),
             "--profile",
             "pdfa-4",
-            "--dpi",
-            "150",
         ],
     )
 
     assert result.exit_code == 0
     assert out.read_bytes() == b"%PDF-2.0\n"
-    assert captured["dpi"] == 150
+    assert captured["dpi"] is None
     assert captured["profile"] is SearchablePdfProfile.pdfa_4

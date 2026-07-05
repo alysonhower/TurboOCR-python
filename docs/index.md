@@ -122,7 +122,7 @@ with Client(base_url="http://localhost:8000") as client:
     # or:
     overlay = client.make_searchable_pdf("photo.jpg", dpi=200)  # image in
     # or, with `pip install 'turboocr[pdfa]'`:
-    overlay = client.make_searchable_pdf("scan.pdf", profile="pdfa-4", dpi=150)
+    overlay = client.make_searchable_pdf("scan.pdf", profile="pdfa-4")
 
 Path("scan.searchable.pdf").write_bytes(overlay)
 ```
@@ -191,7 +191,7 @@ exponential backoff + jitter, `Retry-After` honoured. Tune via
 turbo-ocr ocr page.png --output markdown
 turbo-ocr pdf report.pdf --dpi 150 --output json
 turbo-ocr searchable-pdf scan.pdf -o out.pdf --font-path /path/to/font.ttf
-turbo-ocr searchable-pdf scan.pdf -o out.pdf --profile pdfa-4 --dpi 150
+turbo-ocr searchable-pdf scan.pdf -o out.pdf --profile pdfa-4
 turbo-ocr health --ready
 ```
 

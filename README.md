@@ -59,7 +59,7 @@ with Client(base_url="http://localhost:8000") as client:
     open("scan.searchable.pdf", "wb").write(overlay)
 
     # PDF/A-4 searchable PDF (requires `pip install 'turboocr[pdfa]'`)
-    pdfa = client.make_searchable_pdf("scan.pdf", profile="pdfa-4", dpi=150)
+    pdfa = client.make_searchable_pdf("scan.pdf", profile="pdfa-4")
     open("scan.pdfa.pdf", "wb").write(pdfa)
 ```
 
@@ -81,7 +81,7 @@ ACME invoice fixture.
 - **Searchable PDFs.** `make_searchable_pdf(...)` overlays an invisible text
   layer aligned to the page geometry. Auto-discovers a Unicode font for
   non-Latin scripts, or pass `font_path=`. Install `turboocr[pdfa]` and pass
-  `profile="pdfa-4"` to regenerate PDF/A-4 output at 150 DPI by default.
+  `profile="pdfa-4"` to regenerate PDF/A-4 output at 200 DPI by default.
 - **Production-friendly.** Configurable retry policy (HTTP status + gRPC status
   + `Retry-After`), per-request timeouts, custom `httpx.Client`, `on_request` /
   `on_response` event hooks, uuid7 `X-Request-ID` per call.
@@ -152,7 +152,7 @@ exceptions inherit from `APIConnectionError`.
 turbo-ocr ocr page.png --output markdown
 turbo-ocr pdf doc.pdf --dpi 150 --output json
 turbo-ocr searchable-pdf doc.pdf -o out.pdf --font-path /path/to/font.ttf
-turbo-ocr searchable-pdf doc.pdf -o out.pdf --profile pdfa-4 --dpi 150
+turbo-ocr searchable-pdf doc.pdf -o out.pdf --profile pdfa-4
 turbo-ocr health --ready
 ```
 

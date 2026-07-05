@@ -24,7 +24,7 @@ High-level flow:
      The default `standard` profile preserves the existing ReportLab + pypdf
      overlay path at 200 DPI. The opt-in `pdfa-4` profile uses fpdf2 +
      pypdfium2 to regenerate a PDF/A-4 document from page images plus
-     invisible OCR text at 150 DPI by default.
+     invisible OCR text at 200 DPI by default.
 
 Important architectural patterns:
 
@@ -105,7 +105,7 @@ CLI examples:
 turbo-ocr ocr page.png --output markdown
 turbo-ocr pdf doc.pdf --dpi 150 --output json
 turbo-ocr searchable-pdf doc.pdf -o out.pdf --font-path /path/to/font.ttf
-turbo-ocr searchable-pdf doc.pdf -o out.pdf --profile pdfa-4 --dpi 150
+turbo-ocr searchable-pdf doc.pdf -o out.pdf --profile pdfa-4
 turbo-ocr health --ready
 ```
 
@@ -213,6 +213,6 @@ QA expectations for changes:
 - For public API changes, update examples/docs and preserve import stability unless intentionally making a breaking change.
 - For searchable-PDF changes, include a PDF text-extraction or round-trip
   assertion. For PDF/A-4 profile changes, test the bundled glyphless font path,
-  150 DPI default, and PDF input rasterization through pypdfium2.
+  200 DPI default, and PDF input rasterization through pypdfium2.
 - For Markdown/layout changes, test both block-based rendering and layout/reading-order fallback.
 - Keep integration tests separate from default local checks; they require `TURBO_OCR_BASE_URL` and a running server.

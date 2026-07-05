@@ -26,7 +26,6 @@ try:
     pdfa_overlay = client.make_searchable_pdf(
         PDF,
         profile=SearchablePdfProfile.pdfa_4,
-        dpi=150,
     )
 except ImportError as exc:
     print(f"skipped PDF/A-4 output: {exc}")

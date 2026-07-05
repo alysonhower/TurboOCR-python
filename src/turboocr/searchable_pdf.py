@@ -32,7 +32,7 @@ logger = logging.getLogger("turboocr.searchable_pdf")
 PDF_POINTS_PER_INCH: Final[float] = 72.0
 INVISIBLE_TEXT_MODE: Final[int] = 3
 DEFAULT_STANDARD_DPI: Final[int] = 200
-DEFAULT_PDFA_DPI: Final[int] = 150
+DEFAULT_PDFA_DPI: Final[int] = 200
 
 # Bundled glyphless font: one zero-mark glyph that every BMP codepoint
 # (U+0001..U+FFFF) maps to. Same trick Tesseract's GlyphLessFont uses —
