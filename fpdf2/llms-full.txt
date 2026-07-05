@@ -1,0 +1,1066 @@
+# fpdf2
+
+> Unofficial LLM-oriented full reference for the fpdf2 documentation at https://py-pdf.github.io/fpdf2/.
+
+This file is a synthesized `llms-full.txt` for fpdf2. It is intended to help LLMs and coding agents answer questions, write examples, and choose the right fpdf2 APIs without crawling the rendered documentation site. It is not an official fpdf2 artifact and is not a verbatim mirror of the website. For exact method signatures, edge cases, and release-specific behavior, prefer the linked official API pages and source repository.
+
+Project: fpdf2
+Official documentation: https://py-pdf.github.io/fpdf2/
+Repository: https://github.com/py-pdf/fpdf2
+API reference: https://py-pdf.github.io/fpdf2/fpdf/
+Documentation source: https://github.com/py-pdf/fpdf2/tree/master/docs
+Documentation navigation source: https://github.com/py-pdf/fpdf2/blob/master/mkdocs.yml
+Generated: 2026-06-15
+Observed docs release banner: 2.8.7, dated 2026-02-28
+Repository license note: the repository contains an LGPL-3.0 license file.
+
+## What fpdf2 is
+
+fpdf2 is a Python library for creating PDF documents. It is the maintained successor/fork of PyFPDF. Use it when a Python application needs to generate PDFs programmatically from text, images, vector graphics, tables, HTML fragments, forms of structured data, or generated charts.
+
+The package is installed as `fpdf2` but imported as `fpdf`:
+
+```python
+from fpdf import FPDF
+```
+
+Minimum Python support shown by the current docs: Python 3.10+.
+
+## Primary source priority for agents
+
+When answering fpdf2 questions, use this priority order:
+
+1. Official API reference for exact signatures, enum names, argument defaults, and return values.
+2. Official documentation pages for behavior, recipes, and feature constraints.
+3. Repository source code and tests when documentation is ambiguous.
+4. This file as a compact synthesized guide.
+
+When generating code:
+
+- Prefer modern fpdf2 idioms over legacy PyFPDF-style idioms.
+- Prefer keyword arguments for clarity, especially `text=`, `new_x=`, and `new_y=`.
+- Use `XPos` and `YPos` for cursor movement in new examples instead of deprecated `ln` patterns.
+- Create a fresh `FPDF()` instance per document or per web request.
+- Do not keep writing to an `FPDF` instance after `output()` has finalized it.
+- When upgrading fpdf2, run with Python deprecation warnings enabled to catch deprecated APIs.
+- Validate and restrict untrusted HTML, SVG, image paths, image URLs, and template-driven resource references.
+- For exact compatibility with PDF/A, encryption, signing, and accessibility requirements, check the official feature pages and the API reference.
+
+## Installation
+
+Stable release:
+
+```bash
+pip install fpdf2
+```
+
+Development version from the default branch:
+
+```bash
+pip install --upgrade git+https://github.com/py-pdf/fpdf2.git@master
+```
+
+Basic import:
+
+```python
+from fpdf import FPDF
+```
+
+Useful imports for modern code examples:
+
+```python
+from fpdf import FPDF, XPos, YPos
+from fpdf.enums import Align
+```
+
+Only import enum names that are actually needed in the example. If unsure, use the API reference.
+
+## Minimal PDF example
+
+```python
+from fpdf import FPDF
+
+pdf = FPDF()
+pdf.add_page()
+pdf.set_font("Helvetica", size=12)
+pdf.cell(text="Hello world!")
+pdf.output("hello_world.pdf")
+```
+
+For a web API response, use bytes:
+
+```python
+pdf_bytes = bytes(pdf.output())
+```
+
+When `output()` is called with a filename, it writes to that file. When called without a filename, it returns the PDF content as a bytearray. After calling `output()`, do not add more content to that `FPDF` instance.
+
+## Core object model
+
+The main class is `fpdf.FPDF`.
+
+Constructor topics:
+
+- `orientation`: portrait or landscape.
+- `unit`: common units include `pt`, `mm`, `cm`, `in`; a numeric value may also be used.
+- `format`: common page formats include A3, A4, A5, Letter, Legal, or a custom `(width, height)` tuple.
+- `enforce_compliance`: used to enforce conformance profiles such as PDF/A.
+
+Typical flow:
+
+```python
+from fpdf import FPDF, XPos, YPos
+
+pdf = FPDF(orientation="P", unit="mm", format="A4")
+pdf.set_auto_page_break(auto=True, margin=15)
+pdf.add_page()
+pdf.set_font("Helvetica", size=12)
+pdf.cell(0, 10, "Title", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+pdf.multi_cell(0, 6, "Longer text that can wrap across lines.")
+pdf.output("document.pdf")
+```
+
+The current cursor position matters. Methods such as `cell()`, `multi_cell()`, `write()`, `text()`, `image()`, and drawing methods may either use the current position or explicit coordinates. Use `new_x` and `new_y` to make cursor movement explicit after `cell()` and related calls.
+
+## Page layout
+
+Key pages:
+
+- Page format and orientation: https://py-pdf.github.io/fpdf2/PageFormatAndOrientation.html
+- Margins: https://py-pdf.github.io/fpdf2/Margins.html
+- Templates: https://py-pdf.github.io/fpdf2/Templates.html
+- Text flow regions: https://py-pdf.github.io/fpdf2/TextRegion.html
+- Text columns: https://py-pdf.github.io/fpdf2/TextColumns.html
+- Tables: https://py-pdf.github.io/fpdf2/Tables.html
+
+Important APIs and concepts:
+
+- `FPDF(orientation=..., unit=..., format=...)` sets defaults for the document.
+- `add_page(orientation=..., format=...)` can override page orientation or format for one page.
+- `set_page_background(...)` sets a page background.
+- `set_display_mode(...)` configures preferred viewer zoom/layout.
+- `set_margin(...)`, `set_margins(...)`, `set_left_margin(...)`, `set_right_margin(...)`, and `set_top_margin(...)` control margins.
+- `set_auto_page_break(auto=True, margin=...)` controls automatic page breaks.
+- Templates are useful for fixed-position forms, invoices, labels, repeated page structures, and fields filled from code or data.
+- `Template` can manage its own `FPDF` instance.
+- `FlexTemplate` works with an existing `FPDF` instance and supports reusable elements with offsets, rotation, and scaling.
+
+### Margins
+
+The docs describe default bottom and side margins and explain that margins affect initial cursor placement and automatic page-break behavior. Set margins explicitly in production examples to avoid layout surprises:
+
+```python
+pdf = FPDF()
+pdf.set_margins(left=15, top=15, right=15)
+pdf.set_auto_page_break(auto=True, margin=15)
+```
+
+### Tables
+
+Use `with pdf.table() as table:` for structured tabular content.
+
+Tables support common layout needs including wrapped cell text, column widths, row heights, repeated headings across page breaks, borders, backgrounds, images, and spans.
+
+Example:
+
+```python
+from fpdf import FPDF
+
+pdf = FPDF()
+pdf.add_page()
+pdf.set_font("Helvetica", size=10)
+
+with pdf.table(col_widths=(2, 5, 2)) as table:
+    header = table.row()
+    header.cell("ID")
+    header.cell("Description")
+    header.cell("Qty")
+
+    for item_id, description, qty in [
+        ("A-001", "Widget with a longer wrapped description", "4"),
+        ("B-002", "Replacement component", "1"),
+    ]:
+        row = table.row()
+        row.cell(item_id)
+        row.cell(description)
+        row.cell(qty)
+
+pdf.output("table.pdf")
+```
+
+Useful table options include `col_widths`, `text_align`, `line_height`, borders, padding, heading behavior, row styles, and cell spans. Check the API reference for the exact table arguments available in the installed version.
+
+## Text content
+
+Key pages:
+
+- Adding text: https://py-pdf.github.io/fpdf2/Text.html
+- Line breaks: https://py-pdf.github.io/fpdf2/LineBreaks.html
+- Page breaks: https://py-pdf.github.io/fpdf2/PageBreaks.html
+- Text styling: https://py-pdf.github.io/fpdf2/TextStyling.html
+- Fonts and Unicode: https://py-pdf.github.io/fpdf2/Unicode.html
+- Text shaping: https://py-pdf.github.io/fpdf2/TextShaping.html
+- Emojis, symbols, and dingbats: https://py-pdf.github.io/fpdf2/EmojisSymbolsDingbats.html
+- HTML: https://py-pdf.github.io/fpdf2/HTML.html
+
+Choose the text API by intent:
+
+- `text(x, y, text=...)`: precise one-line baseline placement. Good for absolute positioning. Not the usual choice for paragraphs.
+- `cell(w, h, text=...)`: one rectangular line of text with optional border, fill, link, markdown-style inline styling, and controlled cursor movement.
+- `multi_cell(w, h, text=...)`: wrapped multi-line text in a rectangular area; useful for paragraphs, table-like layouts, and text blocks.
+- `write(h, text=...)`: flowing text starting at the current cursor position.
+- `write_html(html)`: render supported HTML fragments.
+- `text_columns(...)`: render text into one or more text columns.
+
+Set font and colors before writing:
+
+```python
+pdf.set_font("Helvetica", style="B", size=14)
+pdf.set_text_color(30, 30, 30)
+pdf.cell(0, 10, "Section title", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+pdf.set_font("Helvetica", size=11)
+pdf.set_text_color(0, 0, 0)
+pdf.multi_cell(0, 6, "Body text goes here.")
+```
+
+### Built-in fonts and Unicode fonts
+
+The built-in PDF fonts cover limited character sets. For Unicode text, add a TrueType/OpenType font and then select it:
+
+```python
+pdf.add_font("DejaVuSans", fname="DejaVuSans.ttf")
+pdf.set_font("DejaVuSans", size=12)
+pdf.multi_cell(0, 6, "Unicode text: café, Ελληνικά, العربية, 中文")
+```
+
+Notes:
+
+- `add_font()` imports a TTF or OTF font and makes it available to `set_font()`.
+- fpdf2 embeds only the subset of glyphs used in the PDF.
+- WOFF and WOFF2 fonts can be decompressed.
+- TTC/OTC collections can be addressed with a collection font number.
+- Load separate font files for regular, bold, italic, and bold-italic styles when the font family requires it.
+- `set_font()` styles may include bold, italic, underline, and strikethrough combinations where supported.
+- For non-Latin scripts requiring glyph shaping, enable text shaping.
+- Fallback fonts can be configured for missing glyphs.
+- The `unicode_range` mechanism can restrict which glyph ranges a font should serve.
+- Variable fonts and color font palettes are documented in the Unicode page.
+
+### Text shaping
+
+For complex scripts, ligatures, kerning, diacritics, or right-to-left text, use text shaping:
+
+```python
+pdf.set_text_shaping(True)
+```
+
+The docs mention support for shaping features such as ligatures, diacritics, kerning, left-to-right and right-to-left text. Contextual forms and vertical writing have limitations. For CJK line wrapping, consider character-based wrapping such as `wrapmode="CHAR"` where appropriate.
+
+### HTML
+
+`write_html()` renders a supported subset of HTML. It is useful for trusted fragments or controlled templates, not arbitrary browser-grade HTML/CSS.
+
+```python
+pdf.write_html("""
+<h1>Invoice</h1>
+<p><b>Customer:</b> Ada Lovelace</p>
+<p>See <a href="https://example.com">account details</a>.</p>
+""")
+```
+
+Important HTML notes:
+
+- The implementation is based on Python's standard `html.parser.HTMLParser`.
+- It is not a full HTML5 browser engine.
+- It is not a complete CSS renderer.
+- Supported tags include headings, paragraphs, line breaks, horizontal rules, basic inline styles, links, pre/code, images, lists, definition lists, superscript/subscript, and table-related tags.
+- `tag_styles` can customize a subset of tag behavior.
+- A default font family can be passed where needed.
+- Treat untrusted HTML as a security-sensitive input because it can reference external or local resources.
+
+## Graphics, images, SVG, and drawing
+
+Key pages:
+
+- Images: https://py-pdf.github.io/fpdf2/Images.html
+- Shapes: https://py-pdf.github.io/fpdf2/Shapes.html
+- Transformations: https://py-pdf.github.io/fpdf2/Transformations.html
+- Transparency: https://py-pdf.github.io/fpdf2/Transparency.html
+- Patterns: https://py-pdf.github.io/fpdf2/Patterns.html
+- Barcodes: https://py-pdf.github.io/fpdf2/Barcodes.html
+- Drawing: https://py-pdf.github.io/fpdf2/Drawing.html
+- SVG: https://py-pdf.github.io/fpdf2/SVG.html
+- Charts and graphs: https://py-pdf.github.io/fpdf2/Maths.html
+
+### Images
+
+Use `image()` for raster images and supported vector images:
+
+```python
+pdf.image("logo.png", x=10, y=10, w=30)
+```
+
+Image behavior and options:
+
+- Provide explicit width and/or height to control display size.
+- If one dimension is omitted, fpdf2 can preserve aspect ratio.
+- If both dimensions are omitted, default image sizing is based on 72 dpi behavior.
+- The same image reused multiple times is embedded once where possible.
+- Pillow image objects can be passed directly.
+- SVG files can be passed to `image()` and embedded as PDF paths for supported SVG features.
+- Image URLs can be passed, subject to resource access policy.
+- `alt_text` can be used for accessibility metadata where supported.
+- Compression filters and image downscaling options are available.
+- Be careful with transparency and output compliance targets such as PDF/A-1.
+- Image caches can be shared to reduce repeated decoding/embedding work across documents.
+
+### Shapes and low-level drawing
+
+Common drawing operations include:
+
+- `line(...)`
+- `rect(...)`
+- `circle(...)`
+- `ellipse(...)`
+- `polygon(...)`
+- path/drawing APIs for more complex vector content
+
+Set drawing style before drawing:
+
+```python
+pdf.set_draw_color(100, 100, 100)
+pdf.set_line_width(0.3)
+pdf.line(10, 20, 200, 20)
+
+pdf.set_fill_color(240, 240, 240)
+pdf.rect(10, 25, 60, 20, style="DF")
+```
+
+Check the Shapes, Drawing, Transparency, Patterns, and Transformations pages when using advanced graphics state, alpha, patterns, rotations, scales, or custom paths.
+
+### SVG
+
+SVG support converts many SVG paths into PDF drawing instructions. Not all SVG files can be converted. Use `image("file.svg", ...)` for simple SVG insertion, and use `fpdf.svg.SVGObject` for lower-level control.
+
+Examples of supported use cases:
+
+- Inserting an SVG icon or logo.
+- Drawing SVG content to a full page.
+- Transforming SVG content to the page viewport.
+- Converting unsupported SVGs to PNG/JPEG first when conversion is not adequate.
+
+### Charts and graphs
+
+For charts, generate an image or SVG with a charting library and embed it. The docs include integration examples for Matplotlib, Pandas, Plotly, and Pygal. Prefer vector output where possible if crisp scaling matters; prefer raster output when SVG conversion is unreliable.
+
+## PDF features
+
+Key pages:
+
+- Links: https://py-pdf.github.io/fpdf2/Links.html
+- Named destinations: https://py-pdf.github.io/fpdf2/NamedDestinations.html
+- Metadata: https://py-pdf.github.io/fpdf2/Metadata.html
+- Annotations: https://py-pdf.github.io/fpdf2/Annotations.html
+- Presentation mode: https://py-pdf.github.io/fpdf2/Presentations.html
+- Document outline and table of contents: https://py-pdf.github.io/fpdf2/DocumentOutlineAndTableOfContents.html
+- Page labels: https://py-pdf.github.io/fpdf2/PageLabels.html
+- Encryption: https://py-pdf.github.io/fpdf2/Encryption.html
+- Signing: https://py-pdf.github.io/fpdf2/Signing.html
+- File attachments: https://py-pdf.github.io/fpdf2/FileAttachments.html
+- PDF/A: https://py-pdf.github.io/fpdf2/pdfa.html
+
+### Links
+
+External links can be added directly to cells:
+
+```python
+pdf.cell(0, 10, "Open website", link="https://example.com")
+```
+
+Other link mechanisms:
+
+- Markdown-like links inside `multi_cell()` where markdown support is enabled.
+- HTML `<a href="...">...</a>` links via `write_html()`.
+- `FPDF.link(...)` for a rectangular clickable region.
+- Internal links via `add_link(...)` and `set_link(...)`.
+- Links to other documents using PDF link mechanisms documented on the Links page.
+- `alt_text` for link accessibility metadata where supported.
+
+### Named destinations
+
+Named destinations provide semantic targets that remain useful even when page numbers change. Use them for internal document navigation, bookmarks/outlines, actions, or external links into the PDF.
+
+Typical pattern:
+
+```python
+section_link = pdf.add_link(name="section-1")
+pdf.add_page()
+pdf.set_link(section_link)
+pdf.cell(0, 10, "Section 1")
+```
+
+Destination names should be unique and non-empty. Check the official Named Destinations page for exact link syntax and examples for the installed version.
+
+### Metadata
+
+Metadata methods include:
+
+- `set_title(...)`
+- `set_lang(...)`
+- `set_subject(...)`
+- `set_author(...)`
+- `set_keywords(...)`
+- `set_producer(...)`
+- `set_creator(...)`
+- `set_creation_date(...)`
+- `set_xmp_metadata(...)`
+
+Example:
+
+```python
+pdf.set_title("Quarterly Report")
+pdf.set_author("Example Corp")
+pdf.set_subject("Q2 operating metrics")
+pdf.set_keywords("report, finance, q2")
+pdf.set_lang("en-US")
+```
+
+### Annotations
+
+Supported annotation-related features include:
+
+- text annotations
+- free text annotations
+- highlight/underline/squiggly/strikeout annotations
+- ink annotations
+- named actions
+
+Use annotations sparingly if the PDF must be portable across many viewers; behavior and display can vary by viewer.
+
+### Document outline and table of contents
+
+Use `start_section(...)` to register sections for the document outline. Section title styles can render visible headings automatically. For a rendered table of contents, use `insert_toc_placeholder(...)` with a rendering callback and enough reserved pages.
+
+Conceptual pattern:
+
+```python
+pdf.start_section("Introduction", level=0)
+pdf.cell(0, 10, "Introduction", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+```
+
+Use the official page for exact callback signatures when rendering a table of contents.
+
+### Page labels
+
+Page labels allow front matter and main content to use different numbering styles, such as roman numerals for preliminaries and decimal numbers for body pages. Browser PDF viewers may not display labels consistently.
+
+Typical page label components:
+
+- style: decimal, uppercase/lowercase roman, uppercase/lowercase alphabetic
+- prefix
+- start number
+
+Use `add_page(label_style=..., label_prefix=..., label_start=...)` or set labels later with the documented API.
+
+### Encryption
+
+fpdf2 can encrypt generated PDFs. The owner password is required. A user password is optional. Permissions and encryption method can be controlled.
+
+Permission categories include printing, modifying, copying, annotations, form filling, accessibility copying, document assembly, and high-resolution printing.
+
+Encryption method choices include no encryption, RC4, AES-128, and AES-256. AES support requires the `cryptography` package.
+
+Use the official Encryption page for exact enum names and compatibility notes.
+
+### Signing
+
+fpdf2 can digitally sign generated PDFs. The docs describe PKCS#12 certificate usage and `sign_pkcs12(...)`. The `endesive` package is required for this feature. For signing existing PDFs, the docs point to PyHanko.
+
+Use the official Signing page for exact parameters and certificate-handling requirements.
+
+### File attachments
+
+Use file-embedding APIs to attach files to a PDF, or file attachment annotations to create page-level visible attachment markers. Browser PDF viewers often do not display attachments well; test in the target PDF viewer.
+
+### PDF/A
+
+PDF/A is an archival PDF family with self-containment and stability requirements. fpdf2 can enforce specific PDF/A compliance profiles using `enforce_compliance` on the `FPDF` constructor.
+
+Example:
+
+```python
+from fpdf import FPDF
+from fpdf.enums import DocumentCompliance
+
+pdf = FPDF(enforce_compliance=DocumentCompliance.PDFA_4)
+```
+
+When compliance enforcement is enabled, fpdf2 prevents incompatible operations and raises errors for non-compliant behavior.
+
+Current docs mention PDF/A-1, PDF/A-2, PDF/A-3, and PDF/A-4 profiles. All profiles disallow encryption, JavaScript, and multimedia. PDF/A-3 and PDF/A-4 profiles allow attachments in ways older profiles do not. The docs also note that accessibility-oriented A-level PDF/A features such as tagged PDFs are not implemented for the relevant profiles.
+
+## Security
+
+Security page: https://py-pdf.github.io/fpdf2/Security.html
+
+fpdf2 operates on content and resource references provided by the application. The application is responsible for validating untrusted input, restricting filesystem/network access, and choosing safe runtime defaults.
+
+Treat these as security-sensitive inputs:
+
+- HTML passed to `write_html()`
+- SVG passed through `image()`
+- image paths from templates
+- direct image paths or URLs passed to `image()`
+- user-provided template data that can affect resource paths
+
+fpdf2 includes parser protections for some parsing paths, including hardened XML handling for SVG/XML. These protections reduce some parser-specific risks but do not replace validation and sandboxing.
+
+Use `resource_access_policy` to control which resource types can be loaded:
+
+```python
+from fpdf import FPDF, ResourceAccessPolicy
+
+pdf = FPDF()
+pdf.resource_access_policy = (
+    ResourceAccessPolicy.LOCAL_FILES | ResourceAccessPolicy.REMOTE_PUBLIC
+)
+```
+
+The current docs state that the default policy permits local files and remote HTTP(S) resources that resolve to public network addresses, while blocking private, loopback, and link-local network targets.
+
+For user-controlled content, prefer a restrictive global policy and per-call overrides for specific trusted resources:
+
+```python
+from fpdf import FPDF, ResourceAccessPolicy
+
+pdf = FPDF()
+pdf.resource_access_policy = ResourceAccessPolicy.NONE
+
+pdf.image(
+    "https://example.com/logo.png",
+    x=10,
+    y=10,
+    w=20,
+    resource_access_policy=ResourceAccessPolicy.REMOTE_PUBLIC,
+)
+```
+
+Additional recommended controls:
+
+- sanitize or reject untrusted HTML and SVG
+- validate image paths and URLs before passing them to fpdf2
+- restrict network egress at the infrastructure level
+- limit filesystem access for the PDF generation process
+- isolate document generation where appropriate
+
+## Mixing fpdf2 with other libraries
+
+Key pages:
+
+- Combine with pypdf: https://py-pdf.github.io/fpdf2/CombineWithPypdf.html
+- Combine with Markdown: https://py-pdf.github.io/fpdf2/CombineWithMarkdown.html
+- Combine with livereload: https://py-pdf.github.io/fpdf2/CombineWithLivereload.html
+- Combine with borb: https://py-pdf.github.io/fpdf2/CombineWithBorb.html
+- Combine with pdfrw: https://py-pdf.github.io/fpdf2/CombineWithPdfrw.html
+- Matplotlib, Pandas, Plotly, Pygal: https://py-pdf.github.io/fpdf2/CombineWithChartingLibs.html
+- Usage in web APIs: https://py-pdf.github.io/fpdf2/UsageInWebAPI.html
+- Rendering spreadsheets as PDF tables: https://py-pdf.github.io/fpdf2/RenderingSpreadsheetsAsPDFTables.html
+- Templating with Jinja: https://py-pdf.github.io/fpdf2/TemplatingWithJinja.html
+- Combine with Rough.js: https://py-pdf.github.io/fpdf2/CombineWithRoughJS.html
+- Database storage with SQLAlchemy: https://py-pdf.github.io/fpdf2/DatabaseStorage.html
+
+### Web APIs
+
+Create a new `FPDF` object per request. Do not reuse a finalized document. Convert output to bytes for HTTP responses.
+
+Django-style pattern:
+
+```python
+from django.http import HttpResponse
+from fpdf import FPDF
+
+pdf = FPDF()
+pdf.add_page()
+pdf.set_font("Helvetica", size=12)
+pdf.cell(text="Hello from Django")
+
+return HttpResponse(bytes(pdf.output()), content_type="application/pdf")
+```
+
+Flask-style pattern:
+
+```python
+from flask import Response
+from fpdf import FPDF
+
+pdf = FPDF()
+pdf.add_page()
+pdf.set_font("Helvetica", size=12)
+pdf.cell(text="Hello from Flask")
+
+return Response(bytes(pdf.output()), mimetype="application/pdf")
+```
+
+AWS Lambda/API Gateway patterns may require base64 encoding PDF bytes.
+
+### Markdown and templating
+
+Use a Markdown parser or renderer to convert Markdown to HTML, then render supported HTML with `write_html()`. For templating, use Jinja or another template engine to produce controlled HTML or structured data, then pass the result into fpdf2. Do not pass untrusted template output without validation.
+
+### DataFrames, spreadsheets, and charts
+
+For tables, convert data into rows and feed `pdf.table()`. For charts, export chart images or SVGs and insert them with `image()`. When using Pandas or spreadsheet data, normalize data types and explicitly control column widths and text wrapping.
+
+## Development and debugging
+
+Key pages:
+
+- Development guidelines: https://py-pdf.github.io/fpdf2/Development.html
+- Logging: https://py-pdf.github.io/fpdf2/Logging.html
+- Internals: https://py-pdf.github.io/fpdf2/Internals.html
+- Changelog: https://github.com/py-pdf/fpdf2/blob/master/CHANGELOG.md
+- History: https://py-pdf.github.io/fpdf2/History.html
+
+Useful upgrade practice:
+
+```bash
+python -Wd your_script.py
+```
+
+Or in code:
+
+```python
+import warnings
+warnings.simplefilter("default")
+```
+
+This helps surface deprecation warnings after upgrading fpdf2.
+
+## API module index
+
+The root API module exposes the main `FPDF` class and commonly used helpers such as:
+
+- `FPDF`
+- `FPDFException`
+- `FPDFResourceAccessError`
+- `FontFace`
+- `TextStyle`
+- `Align`
+- `XPos`
+- `YPos`
+- `TextMode`
+- `ViewerPreferences`
+- `ResourceAccessPolicy`
+- `Template`
+- `FlexTemplate`
+
+Important API submodules in the documentation include:
+
+- `fpdf.fpdf`
+- `fpdf.enums`
+- `fpdf.fonts`
+- `fpdf.html`
+- `fpdf.image_datastructures`
+- `fpdf.outline`
+- `fpdf.template`
+- `fpdf.table`
+- `fpdf.text_region`
+- `fpdf.drawing`
+- `fpdf.svg`
+- `fpdf.line_break`
+- `fpdf.annotations`
+- `fpdf.output`
+- `fpdf.syntax`
+
+Use the official API index for exact class and function lists.
+
+## Common task recipes
+
+### Create a single-page PDF
+
+```python
+from fpdf import FPDF
+
+pdf = FPDF()
+pdf.add_page()
+pdf.set_font("Helvetica", size=12)
+pdf.multi_cell(0, 6, "This is a simple PDF generated with fpdf2.")
+pdf.output("simple.pdf")
+```
+
+### Add a title and paragraph with explicit cursor movement
+
+```python
+from fpdf import FPDF, XPos, YPos
+
+pdf = FPDF()
+pdf.add_page()
+pdf.set_font("Helvetica", "B", 16)
+pdf.cell(0, 10, "Report", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+pdf.set_font("Helvetica", size=11)
+pdf.multi_cell(0, 6, "A paragraph that can wrap across multiple lines.")
+pdf.output("report.pdf")
+```
+
+### Use a Unicode font
+
+```python
+from fpdf import FPDF
+
+pdf = FPDF()
+pdf.add_page()
+pdf.add_font("DejaVuSans", fname="DejaVuSans.ttf")
+pdf.set_font("DejaVuSans", size=12)
+pdf.multi_cell(0, 6, "Unicode: café, Ελληνικά, العربية, हिन्दी, 中文")
+pdf.output("unicode.pdf")
+```
+
+### Use fallback fonts
+
+```python
+pdf.add_font("Primary", fname="Primary.ttf")
+pdf.add_font("Fallback", fname="Fallback.ttf")
+pdf.set_font("Primary", size=12)
+pdf.set_fallback_fonts(["Fallback"])
+pdf.multi_cell(0, 6, "Text containing glyphs that may need a fallback font.")
+```
+
+Check the Unicode page for exact fallback behavior, matching options, and font range controls.
+
+### Render supported HTML
+
+```python
+from fpdf import FPDF
+
+pdf = FPDF()
+pdf.add_page()
+pdf.set_font("Helvetica", size=12)
+pdf.write_html("""
+<h1>Summary</h1>
+<p>This paragraph contains <b>bold</b> text and <a href="https://example.com">a link</a>.</p>
+""")
+pdf.output("html.pdf")
+```
+
+### Insert an image
+
+```python
+pdf.image("photo.jpg", x=10, y=20, w=80)
+```
+
+### Insert an SVG
+
+```python
+pdf.image("diagram.svg", x=10, y=20, w=100)
+```
+
+If the SVG does not render as expected, simplify the SVG or convert it to a raster image before insertion.
+
+### Create an internal link
+
+```python
+from fpdf import FPDF
+
+pdf = FPDF()
+link_to_details = pdf.add_link()
+
+pdf.add_page()
+pdf.set_font("Helvetica", size=12)
+pdf.cell(0, 10, "Go to details", link=link_to_details)
+
+pdf.add_page()
+pdf.set_link(link_to_details)
+pdf.cell(0, 10, "Details")
+
+pdf.output("links.pdf")
+```
+
+### Set basic metadata
+
+```python
+pdf.set_title("Document title")
+pdf.set_author("Author name")
+pdf.set_subject("Document subject")
+pdf.set_keywords("keyword1, keyword2")
+pdf.set_lang("en-US")
+```
+
+### Generate PDF bytes for a response
+
+```python
+pdf_bytes = bytes(pdf.output())
+```
+
+Use the framework-specific response object to send `pdf_bytes` with content type `application/pdf`.
+
+## Common pitfalls
+
+- Installing package `fpdf2` but trying to import `fpdf2`; the import used by the docs is `from fpdf import FPDF`.
+- Using built-in fonts for Unicode text; use `add_font()` with a suitable TTF/OTF font instead.
+- Forgetting to enable text shaping for scripts that require it.
+- Assuming `write_html()` is a full browser; it supports a documented HTML subset.
+- Reusing an `FPDF` object after `output()`.
+- Reusing one mutable `FPDF` instance across web requests.
+- Allowing untrusted HTML, SVG, file paths, or URLs without a restrictive resource access policy.
+- Assuming all PDF viewers display attachments, labels, annotations, or presentation settings the same way.
+- Enabling PDF/A compliance late instead of designing the document around compliance constraints from the start.
+- Using chart/SVG output without testing conversion quality in the target PDF viewer.
+- Depending on old PyFPDF idioms when fpdf2 provides newer enum-driven APIs.
+
+## Official documentation map
+
+The site is built with MkDocs from the `docs/` directory. `use_directory_urls` is false, so most Markdown pages render as `.html` pages.
+
+### Project home
+
+- Project Home: https://py-pdf.github.io/fpdf2/
+
+### Tutorial
+
+- Jupyter notebook: https://py-pdf.github.io/fpdf2/notebook.html
+- Tutorial in English: https://py-pdf.github.io/fpdf2/Tutorial.html
+- বাংলা: https://py-pdf.github.io/fpdf2/Tutorial-bn.html
+- Tutorial auf Deutsch: https://py-pdf.github.io/fpdf2/Tutorial-de.html
+- Tutorial en español: https://py-pdf.github.io/fpdf2/Tutorial-es.html
+- Tutorial en français: https://py-pdf.github.io/fpdf2/Tutorial-fr.html
+- Φροντιστήριο στα ελληνικά: https://py-pdf.github.io/fpdf2/Tutorial-gr.html
+- מדריך בעברית: https://py-pdf.github.io/fpdf2/Tutorial-he.html
+- हिंदी में ट्यूटोरियल: https://py-pdf.github.io/fpdf2/Tutorial-hi.html
+- Panduan dalam Bahasa Indonesia: https://py-pdf.github.io/fpdf2/Tutorial-id.html
+- Tutorial in italiano: https://py-pdf.github.io/fpdf2/Tutorial-it.html
+- 日本語チュートリアル: https://py-pdf.github.io/fpdf2/Tutorial-ja.html
+- ភាសខ្មែរ: https://py-pdf.github.io/fpdf2/Tutorial-km.html
+- Handleiding in Dutch: https://py-pdf.github.io/fpdf2/Tutorial-nl.html
+- Poradnik w języku polskim: https://py-pdf.github.io/fpdf2/Tutorial-pl.html
+- Tutorial em português: https://py-pdf.github.io/fpdf2/Tutorial-pt.html
+- Учебник на русском языке: https://py-pdf.github.io/fpdf2/Tutorial-ru.html
+- Türkçe Kılavuz: https://py-pdf.github.io/fpdf2/Tutorial-tr.html
+- 简体中文教程: https://py-pdf.github.io/fpdf2/Tutorial-zh.html
+- Vodnik po uporabi knjižnice: https://py-pdf.github.io/fpdf2/Tutorial-sl.html
+- Підручник українською мовою: https://py-pdf.github.io/fpdf2/Tutorial-ua.html
+- ਪੰਜਾਬੀ ਟਿਊਟੋਰੀਅਲ: https://py-pdf.github.io/fpdf2/Tutorial-pa.html
+
+### Page Layout
+
+- Page Format and Orientation: https://py-pdf.github.io/fpdf2/PageFormatAndOrientation.html
+- Margins: https://py-pdf.github.io/fpdf2/Margins.html
+- Templates: https://py-pdf.github.io/fpdf2/Templates.html
+- Text Flow Regions - Basics: https://py-pdf.github.io/fpdf2/TextRegion.html
+- Text Flow Regions - Text Columns: https://py-pdf.github.io/fpdf2/TextColumns.html
+- Tables: https://py-pdf.github.io/fpdf2/Tables.html
+
+### Text Content
+
+- Adding Text: https://py-pdf.github.io/fpdf2/Text.html
+- Line breaks: https://py-pdf.github.io/fpdf2/LineBreaks.html
+- Page breaks: https://py-pdf.github.io/fpdf2/PageBreaks.html
+- Text styling: https://py-pdf.github.io/fpdf2/TextStyling.html
+- Fonts and Unicode: https://py-pdf.github.io/fpdf2/Unicode.html
+- Text Shaping: https://py-pdf.github.io/fpdf2/TextShaping.html
+- Emojis, Symbols & Dingbats: https://py-pdf.github.io/fpdf2/EmojisSymbolsDingbats.html
+- HTML: https://py-pdf.github.io/fpdf2/HTML.html
+
+### Graphics Content
+
+- Images: https://py-pdf.github.io/fpdf2/Images.html
+- Shapes: https://py-pdf.github.io/fpdf2/Shapes.html
+- Transformations: https://py-pdf.github.io/fpdf2/Transformations.html
+- Transparency: https://py-pdf.github.io/fpdf2/Transparency.html
+- Patterns: https://py-pdf.github.io/fpdf2/Patterns.html
+- Barcodes: https://py-pdf.github.io/fpdf2/Barcodes.html
+- Drawing: https://py-pdf.github.io/fpdf2/Drawing.html
+- SVG: https://py-pdf.github.io/fpdf2/SVG.html
+- Charts & Graphs: https://py-pdf.github.io/fpdf2/Maths.html
+
+### PDF Features
+
+- Links: https://py-pdf.github.io/fpdf2/Links.html
+- Named destinations: https://py-pdf.github.io/fpdf2/NamedDestinations.html
+- Metadata: https://py-pdf.github.io/fpdf2/Metadata.html
+- Annotations: https://py-pdf.github.io/fpdf2/Annotations.html
+- Presentation Mode: https://py-pdf.github.io/fpdf2/Presentations.html
+- Document outline & table of contents: https://py-pdf.github.io/fpdf2/DocumentOutlineAndTableOfContents.html
+- Page Labels: https://py-pdf.github.io/fpdf2/PageLabels.html
+- Encryption: https://py-pdf.github.io/fpdf2/Encryption.html
+- Signing: https://py-pdf.github.io/fpdf2/Signing.html
+- File attachments: https://py-pdf.github.io/fpdf2/FileAttachments.html
+- PDF/A: https://py-pdf.github.io/fpdf2/pdfa.html
+
+### Mixing other libraries
+
+- Combine with pypdf: https://py-pdf.github.io/fpdf2/CombineWithPypdf.html
+- Combine with Markdown: https://py-pdf.github.io/fpdf2/CombineWithMarkdown.html
+- Combine with livereload: https://py-pdf.github.io/fpdf2/CombineWithLivereload.html
+- Combine with borb: https://py-pdf.github.io/fpdf2/CombineWithBorb.html
+- Combine with pdfrw: https://py-pdf.github.io/fpdf2/CombineWithPdfrw.html
+- Matplotlib, Pandas, Plotly, Pygal: https://py-pdf.github.io/fpdf2/CombineWithChartingLibs.html
+- Usage in web APIs: https://py-pdf.github.io/fpdf2/UsageInWebAPI.html
+- Rendering spreadsheets as PDF tables: https://py-pdf.github.io/fpdf2/RenderingSpreadsheetsAsPDFTables.html
+- Templating with Jinja: https://py-pdf.github.io/fpdf2/TemplatingWithJinja.html
+- Combine with Rough.js: https://py-pdf.github.io/fpdf2/CombineWithRoughJS.html
+- Database storage with SQLAlchemy: https://py-pdf.github.io/fpdf2/DatabaseStorage.html
+
+### Development
+
+- Development guidelines: https://py-pdf.github.io/fpdf2/Development.html
+- Logging: https://py-pdf.github.io/fpdf2/Logging.html
+- fpdf2 internals: https://py-pdf.github.io/fpdf2/Internals.html
+
+### Other
+
+- Security considerations: https://py-pdf.github.io/fpdf2/Security.html
+- API: https://py-pdf.github.io/fpdf2/fpdf/
+- Changelog: https://github.com/py-pdf/fpdf2/blob/master/CHANGELOG.md
+- History: https://py-pdf.github.io/fpdf2/History.html
+
+## Page-level summaries
+
+### Project Home
+
+Use the homepage for the current release banner, quick installation command, minimal example, and feature overview. It is the best entry point for new users.
+
+### Tutorial
+
+Use the English tutorial as the main beginner walkthrough. Translated tutorials are available for many languages. For LLM responses in English, prefer the English tutorial and API reference unless the user explicitly asks in another language.
+
+### Page Format and Orientation
+
+Use this page for document/page sizing, orientation, page backgrounds, display mode, viewer preferences, and full-screen presentation behavior.
+
+### Margins
+
+Use this page for global and per-side margins, zero-margin layouts, and how margins interact with automatic page breaks.
+
+### Templates
+
+Use this page for fixed-position reusable layouts and field substitution. Prefer templates when a document has stable geometry, such as invoices, forms, labels, certificates, or tickets.
+
+### Text Flow Regions and Text Columns
+
+Use these pages for more advanced text layout where content should flow inside defined regions or columns rather than the whole page.
+
+### Tables
+
+Use this page for `pdf.table()`, row/cell APIs, column widths, row heights, headings, borders, background fills, image cells, wrapped text, and spans.
+
+### Adding Text
+
+Use this page to decide between `text()`, `cell()`, `multi_cell()`, `write()`, `write_html()`, and text columns.
+
+### Line breaks and Page breaks
+
+Use these pages when examples need precise control over wrapping, manual page breaks, automatic page breaks, or behavior at page boundaries.
+
+### Text styling
+
+Use this page for font style, fill/draw/text colors, markdown-style inline formatting, underline/strike, and text rendering modes.
+
+### Fonts and Unicode
+
+Use this page whenever the question involves non-ASCII characters, emojis, font embedding, fallback fonts, font collections, variable fonts, color fonts, or glyph subsetting.
+
+### Text Shaping
+
+Use this page for Arabic, Hebrew, Indic scripts, ligatures, kerning, diacritics, right-to-left text, and complex-script behavior.
+
+### Emojis, Symbols & Dingbats
+
+Use this page for emoji and symbol rendering. Expect to need appropriate fonts and fallback behavior.
+
+### HTML
+
+Use this page for `write_html()`, supported tags, tag styles, tables in HTML, links, images, and limitations of the HTML parser.
+
+### Images
+
+Use this page for raster images, PIL/Pillow objects, URLs, SVG via `image()`, alt text, image compression, transparency, ICC profiles, oversized image detection, and cache sharing.
+
+### Shapes, Drawing, Transformations, Transparency, Patterns
+
+Use these pages for vector drawing, paths, coordinate transformations, transparency groups/alpha, tiling or shading patterns, and advanced graphics state.
+
+### Barcodes
+
+Use this page for barcode generation/rendering examples and supported barcode APIs.
+
+### SVG
+
+Use this page for SVG conversion to PDF drawing instructions, full-page SVG placement, and when to convert SVG to raster.
+
+### Charts & Graphs
+
+Use this page for embedding output from Matplotlib, Pandas, Plotly, Pygal, and similar libraries.
+
+### Links and Named destinations
+
+Use these pages for internal/external links, markdown/html link handling, rectangular link areas, semantic destination names, and robust navigation targets.
+
+### Metadata
+
+Use this page for PDF information dictionary metadata, language, keywords, producer/creator fields, creation date, and XMP metadata.
+
+### Annotations
+
+Use this page for text annotations, free text annotations, highlighting, underline/squiggly/strikeout markup, ink annotations, and named actions.
+
+### Presentation Mode
+
+Use this page for full-screen behavior, transitions, page durations, and viewer presentation preferences.
+
+### Document outline & table of contents
+
+Use this page for outlines/bookmarks, section levels, automatic section title styles, and rendered table-of-contents callbacks.
+
+### Page Labels
+
+Use this page for roman-numeral preliminaries, prefixed labels, label starts, and viewer support caveats.
+
+### Encryption
+
+Use this page for password protection, permission flags, owner/user passwords, RC4/AES methods, and `cryptography` requirements for AES.
+
+### Signing
+
+Use this page for digital signatures, PKCS#12 certificate usage, `endesive`, and guidance about PyHanko for existing PDFs.
+
+### File attachments
+
+Use this page for embedded files and file attachment annotations, including PDF viewer caveats.
+
+### PDF/A
+
+Use this page for archival compliance profiles, `DocumentCompliance`, forbidden features, attachments in later profiles, output intents, and unsupported accessibility conformance features.
+
+### Combine with pypdf / borb / pdfrw
+
+Use these pages when the task requires post-processing, merging, importing, or interacting with PDFs beyond fpdf2's generation role.
+
+### Combine with Markdown / Jinja
+
+Use these pages for document pipelines that start from Markdown or templates and end in controlled HTML or structured fpdf2 calls.
+
+### Usage in web APIs
+
+Use this page for Django, Flask, WSGI, and AWS Lambda style output patterns. Key rule: one fresh `FPDF` object per generated document/request.
+
+### Rendering spreadsheets as PDF tables
+
+Use this page for spreadsheet-to-table workflows.
+
+### Database storage with SQLAlchemy
+
+Use this page for storing generated PDF bytes or related metadata through SQLAlchemy-backed systems.
+
+### Development, Logging, Internals
+
+Use these pages when contributing to fpdf2, debugging internals, understanding logging behavior, or tracing generated PDF structure.
+
+### Security
+
+Use this page whenever user-controlled content, filesystem access, network access, HTML, SVG, or image URLs are involved.
+
+## Final reminder for agents
+
+For simple PDFs, generate direct `FPDF` code. For exact API behavior, use the official API reference. For layout-heavy documents, use explicit margins, explicit cursor movement, `multi_cell()` for wrapped text, `pdf.table()` for tables, and a Unicode font for non-ASCII content. For web/API contexts, return `bytes(pdf.output())` and instantiate a new `FPDF` per request. For untrusted inputs, set a restrictive resource access policy and validate content before rendering.

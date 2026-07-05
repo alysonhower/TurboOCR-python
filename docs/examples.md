@@ -1,10 +1,11 @@
 # Examples
 
 Every example below is a runnable script in
-[`docs/`](https://github.com/aiptimizer/TurboOCR-python/tree/main/docs).
-Each runs end-to-end against the bundled ACME invoice fixture — no extra
-config needed beyond a running TurboOCR server reachable at
-`http://localhost:8000` (override with `TURBO_OCR_BASE_URL`).
+[`examples/`](https://github.com/aiptimizer/TurboOCR-python/tree/main/examples).
+Each runs end-to-end against the bundled ACME invoice fixture with a
+TurboOCR server reachable at `http://localhost:8000` (override with
+`TURBO_OCR_BASE_URL`). The PDF/A-4 branch in the searchable-PDF example
+also needs `turboocr[pdfa]`.
 
 ```bash
 export TURBO_OCR_BASE_URL=http://localhost:8000  # optional, this is the default
@@ -34,6 +35,7 @@ items (with bbox + confidence) and reading-order-grouped blocks.
 ## 03 Searchable PDF
 
 PDF → invisible-text-overlay PDF, verified via `pypdf.extract_text()`.
+Also demonstrates PDF/A-4 output when `turboocr[pdfa]` is installed.
 
 [`examples/03_searchable_pdf.py`](https://github.com/aiptimizer/TurboOCR-python/blob/main/examples/03_searchable_pdf.py)
 

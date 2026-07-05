@@ -1,12 +1,12 @@
-"""Generate the example fixtures used by all docs/*.py scripts.
+"""Generate the example fixtures used by all examples/*.py scripts.
 
 Produces:
-  docs/sample/acme_invoice.pdf  — 2-page fictional invoice + terms
-  docs/sample/acme_invoice.png  — page 1 rendered to PNG at 144 DPI
+  examples/sample/acme_invoice.pdf  — 2-page fictional invoice + terms
+  examples/sample/acme_invoice.png  — page 1 rendered to PNG at 144 DPI
 
 Re-run after editing the content. Requires `reportlab` (ships with the core
-install) and `pypdfium2` (part of the `[dev]` extra; install with
-`pip install -e ".[dev]"` from a clone).
+install) and `pypdfium2` (part of the `[dev]` and `[pdfa]` extras; install
+with `uv sync --extra dev` for repository work).
 """
 
 from __future__ import annotations

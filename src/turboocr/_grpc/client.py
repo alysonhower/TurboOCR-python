@@ -16,7 +16,13 @@ from .._core.ids import short_request_id
 from .._core.options import OcrOptions
 from .._core.retry import RetryPolicy
 from ..models import BatchResponse, HealthStatus, OcrResponse, PdfMode, PdfResponse
-from ..searchable_pdf import make_searchable_pdf as _overlay
+from ..searchable_pdf import (
+    SearchablePdfProfile,
+    default_dpi_for_profile,
+)
+from ..searchable_pdf import (
+    make_searchable_pdf as _overlay,
+)
 from ._stubs import ocr_pb2 as pb2
 from ._stubs import ocr_pb2_grpc as pb2_grpc
 from .channel import (
@@ -338,23 +344,25 @@ class GrpcClient(_BaseGrpcClient):
         self,
         source: ImageInput,
         *,
-        dpi: int = 200,
+        dpi: int | None = None,
         mode: PdfMode | str | None = None,
         font_path: str | None = None,
+        profile: SearchablePdfProfile | str = SearchablePdfProfile.standard,
     ) -> bytes:
         """gRPC equivalent of
         [`Client.make_searchable_pdf`][turboocr.Client.make_searchable_pdf].
         """
         raw = read_image_bytes(source)
+        resolved_dpi = dpi if dpi is not None else default_dpi_for_profile(profile)
         if raw.startswith(b"%PDF-"):
             response: OcrResponse | PdfResponse = self.recognize_pdf(
-                raw, dpi=dpi, mode=mode
+                raw, dpi=resolved_dpi, mode=mode
             )
         else:
             response = self.recognize_image(
                 raw, layout=True, reading_order=True, include_blocks=True
             )
-        return _overlay(raw, response, dpi=dpi, font_path=font_path)
+        return _overlay(raw, response, dpi=resolved_dpi, font_path=font_path, profile=profile)
 
 
 class _AsyncGrpcClientKwargs(TypedDict, total=False):
@@ -581,20 +589,22 @@ class AsyncGrpcClient(_BaseGrpcClient):
         self,
         source: ImageInput,
         *,
-        dpi: int = 200,
+        dpi: int | None = None,
         mode: PdfMode | str | None = None,
         font_path: str | None = None,
+        profile: SearchablePdfProfile | str = SearchablePdfProfile.standard,
     ) -> bytes:
         """Async equivalent of
         [`GrpcClient.make_searchable_pdf`][turboocr.GrpcClient.make_searchable_pdf].
         """
         raw = read_image_bytes(source)
+        resolved_dpi = dpi if dpi is not None else default_dpi_for_profile(profile)
         if raw.startswith(b"%PDF-"):
             response: OcrResponse | PdfResponse = await self.recognize_pdf(
-                raw, dpi=dpi, mode=mode
+                raw, dpi=resolved_dpi, mode=mode
             )
         else:
             response = await self.recognize_image(
                 raw, layout=True, reading_order=True, include_blocks=True
             )
-        return _overlay(raw, response, dpi=dpi, font_path=font_path)
+        return _overlay(raw, response, dpi=resolved_dpi, font_path=font_path, profile=profile)

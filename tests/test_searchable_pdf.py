@@ -7,7 +7,8 @@ import pytest
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen.canvas import Canvas
 
-from turboocr import OcrResponse, PdfResponse, ProtocolError
+import turboocr.searchable_pdf as searchable_pdf_module
+from turboocr import OcrResponse, PdfResponse, ProtocolError, SearchablePdfProfile
 from turboocr.markdown import MarkdownStyle, NodeKind
 from turboocr.searchable_pdf import (
     PDF_POINTS_PER_INCH,
@@ -56,6 +57,15 @@ def _pdf_response_with_text(text: str, *, dpi: int = 200) -> PdfResponse:
             ]
         }
     )
+
+
+def _image_bytes(fmt: str = "PNG", *, size: tuple[int, int] = (800, 600)) -> bytes:
+    from PIL import Image
+
+    img = Image.new("RGB", size, color=(255, 255, 255))
+    buf = BytesIO()
+    img.save(buf, fmt)
+    return buf.getvalue()
 
 
 def test_make_searchable_pdf_round_trips_latin_text() -> None:
@@ -158,6 +168,115 @@ def test_glyphless_font_handles_non_latin_out_of_the_box() -> None:
     # equality (pypdf normalisation can reflow whitespace) but at least
     # each script should produce something extractable.
     assert extracted.strip()
+
+
+def test_make_searchable_pdfa4_defaults_to_150_dpi(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, int] = {}
+
+    def fake_pdfa4(
+        original: bytes,
+        response: PdfResponse | OcrResponse,
+        *,
+        dpi: int,
+        font_path: str | None,
+    ) -> bytes:
+        captured["dpi"] = dpi
+        return b"%PDF-2.0\n"
+
+    monkeypatch.setattr(searchable_pdf_module, "_make_searchable_pdfa4", fake_pdfa4)
+    response = _pdf_response_with_text("abc", dpi=150)
+
+    out = make_searchable_pdf(
+        b"%PDF-1.7\n",
+        response,
+        profile=SearchablePdfProfile.pdfa_4,
+    )
+
+    assert out.startswith(b"%PDF-")
+    assert captured["dpi"] == 150
+
+
+def test_make_searchable_pdfa4_from_image_extracts_text() -> None:
+    response = PdfResponse.model_validate(
+        {
+            "pages": [
+                {
+                    "page": 1,
+                    "page_index": 0,
+                    "dpi": 150,
+                    "width": 800,
+                    "height": 600,
+                    "results": [
+                        {
+                            "id": 0,
+                            "text": "pdfa image text",
+                            "confidence": 0.9,
+                            "bounding_box": _pixel_box(10, 10, 220, 40),
+                        }
+                    ],
+                    "layout": [],
+                    "reading_order": [0],
+                    "blocks": [],
+                    "mode": "ocr",
+                    "text_layer_quality": "ocr",
+                }
+            ]
+        }
+    )
+
+    out = make_searchable_pdf(
+        _image_bytes(),
+        response,
+        profile=SearchablePdfProfile.pdfa_4,
+    )
+
+    assert out.startswith(b"%PDF-2.0")
+    assert b"pdfaid:part" in out
+    extracted = pypdf.PdfReader(BytesIO(out)).pages[0].extract_text()
+    assert "pdfa image text" in extracted
+
+
+def test_make_searchable_pdfa4_from_pdf_rasterizes_and_extracts_text() -> None:
+    pdf = _blank_pdf()
+    response = _pdf_response_with_text("pdfa pdf text", dpi=150)
+
+    out = make_searchable_pdf(pdf, response, profile=SearchablePdfProfile.pdfa_4)
+
+    assert out.startswith(b"%PDF-2.0")
+    assert b"pdfaid:part" in out
+    extracted = pypdf.PdfReader(BytesIO(out)).pages[0].extract_text()
+    assert "pdfa pdf text" in extracted
+
+
+def test_make_searchable_pdfa4_glyphless_font_handles_non_latin() -> None:
+    response = _pdf_response_with_text("héllo wörld 北京 مرحبا", dpi=150)
+
+    out = make_searchable_pdf(_blank_pdf(), response, profile=SearchablePdfProfile.pdfa_4)
+
+    assert out.startswith(b"%PDF-2.0")
+    extracted = pypdf.PdfReader(BytesIO(out)).pages[0].extract_text()
+    assert extracted.strip()
+
+
+def test_make_searchable_pdfa4_missing_extra_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def missing_dependencies() -> object:
+        raise searchable_pdf_module._pdfa_extra_error()
+
+    monkeypatch.setattr(
+        searchable_pdf_module,
+        "_load_pdfa_dependencies",
+        missing_dependencies,
+    )
+    response = _pdf_response_with_text("abc", dpi=150)
+
+    with pytest.raises(ImportError, match=r"turboocr\[pdfa\]"):
+        make_searchable_pdf(
+            b"%PDF-1.7\n",
+            response,
+            profile=SearchablePdfProfile.pdfa_4,
+        )
 
 
 def test_block_model_dump_round_trip() -> None:

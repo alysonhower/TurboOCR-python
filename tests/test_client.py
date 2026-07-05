@@ -4,7 +4,14 @@ import httpx
 import pytest
 import respx
 
-from turboocr import AsyncClient, Client, DimensionsTooLarge, LayoutDisabled
+from turboocr import (
+    AsyncClient,
+    Client,
+    DimensionsTooLarge,
+    LayoutDisabled,
+    SearchablePdfProfile,
+)
+from turboocr._http import client as http_client_module
 
 
 def _ocr_payload() -> dict[str, object]:
@@ -38,6 +45,26 @@ def _ocr_payload() -> dict[str, object]:
                 "order_index": 0,
             }
         ],
+    }
+
+
+def _pdf_payload(*, dpi: int) -> dict[str, object]:
+    return {
+        "pages": [
+            {
+                "page": 1,
+                "page_index": 0,
+                "dpi": dpi,
+                "width": 100,
+                "height": 200,
+                "results": [],
+                "layout": [],
+                "reading_order": [],
+                "blocks": [],
+                "mode": "ocr",
+                "text_layer_quality": "ocr",
+            }
+        ]
     }
 
 
@@ -156,6 +183,73 @@ def test_pdf_params() -> None:
     params = dict(route.calls.last.request.url.params)
     assert params["dpi"] == "150"
     assert params["mode"] == "auto"
+
+
+@respx.mock
+def test_make_searchable_pdf_default_standard_dpi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_overlay(
+        raw: bytes,
+        response: object,
+        *,
+        dpi: int,
+        font_path: str | None,
+        profile: object,
+    ) -> bytes:
+        captured["dpi"] = dpi
+        captured["profile"] = profile
+        return b"%PDF-1.7\n"
+
+    route = respx.post("http://t/ocr/pdf").mock(
+        return_value=httpx.Response(200, json=_pdf_payload(dpi=200))
+    )
+    monkeypatch.setattr(http_client_module, "_overlay", fake_overlay)
+
+    with Client(base_url="http://t") as client:
+        out = client.make_searchable_pdf(b"%PDF-1.7\n")
+
+    assert out.startswith(b"%PDF-")
+    assert dict(route.calls.last.request.url.params)["dpi"] == "200"
+    assert captured["dpi"] == 200
+    assert captured["profile"] is SearchablePdfProfile.standard
+
+
+@respx.mock
+def test_make_searchable_pdf_default_pdfa4_dpi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_overlay(
+        raw: bytes,
+        response: object,
+        *,
+        dpi: int,
+        font_path: str | None,
+        profile: object,
+    ) -> bytes:
+        captured["dpi"] = dpi
+        captured["profile"] = profile
+        return b"%PDF-2.0\n"
+
+    route = respx.post("http://t/ocr/pdf").mock(
+        return_value=httpx.Response(200, json=_pdf_payload(dpi=150))
+    )
+    monkeypatch.setattr(http_client_module, "_overlay", fake_overlay)
+
+    with Client(base_url="http://t") as client:
+        out = client.make_searchable_pdf(
+            b"%PDF-1.7\n",
+            profile=SearchablePdfProfile.pdfa_4,
+        )
+
+    assert out.startswith(b"%PDF-")
+    assert dict(route.calls.last.request.url.params)["dpi"] == "150"
+    assert captured["dpi"] == 150
+    assert captured["profile"] is SearchablePdfProfile.pdfa_4
 
 
 @respx.mock

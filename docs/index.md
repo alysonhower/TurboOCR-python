@@ -12,6 +12,7 @@ matches what you want to do, copy the code, run it.
 ```bash
 pip install turboocr             # HTTP + CLI + searchable-PDF
 pip install 'turboocr[grpc]'     # add the gRPC transport
+pip install 'turboocr[pdfa]'     # add PDF/A-4 searchable-PDF generation
 pip install 'turboocr[all]'      # everything optional
 ```
 
@@ -120,6 +121,8 @@ with Client(base_url="http://localhost:8000") as client:
     overlay = client.make_searchable_pdf("scan.pdf", dpi=200)   # PDF in
     # or:
     overlay = client.make_searchable_pdf("photo.jpg", dpi=200)  # image in
+    # or, with `pip install 'turboocr[pdfa]'`:
+    overlay = client.make_searchable_pdf("scan.pdf", profile="pdfa-4", dpi=150)
 
 Path("scan.searchable.pdf").write_bytes(overlay)
 ```
@@ -128,6 +131,11 @@ Non-Latin scripts (CJK, Arabic, Cyrillic, …) work without setup — the
 bundled glyphless font covers every BMP codepoint. See
 [Non-Latin PDFs](how-tos/handle_non_latin_pdfs.md) only if you need to
 override the default font.
+
+The `pdfa-4` profile regenerates pages from raster images plus invisible
+OCR text. It intentionally does not preserve source PDF vectors,
+annotations, forms, or bookmarks. Validate archival workflows with a
+PDF/A validator such as veraPDF.
 
 ## Async
 
@@ -183,6 +191,7 @@ exponential backoff + jitter, `Retry-After` honoured. Tune via
 turbo-ocr ocr page.png --output markdown
 turbo-ocr pdf report.pdf --dpi 150 --output json
 turbo-ocr searchable-pdf scan.pdf -o out.pdf --font-path /path/to/font.ttf
+turbo-ocr searchable-pdf scan.pdf -o out.pdf --profile pdfa-4 --dpi 150
 turbo-ocr health --ready
 ```
 

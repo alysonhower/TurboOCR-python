@@ -16,6 +16,7 @@ from ._http.client import Client
 from .errors import TurboOcrError
 from .markdown import render_to_markdown
 from .models import OcrResponse, PdfMode, PdfResponse
+from .searchable_pdf import SearchablePdfProfile
 
 
 class OutputFormat(StrEnum):
@@ -99,16 +100,17 @@ def searchable_pdf(
     out: Annotated[Path, typer.Option("--out", "-o", help="Output PDF path")],
     base_url: Annotated[str, typer.Option(envvar="TURBO_OCR_BASE_URL")] = DEFAULT_BASE_URL,
     api_key: Annotated[str | None, typer.Option(envvar="TURBO_OCR_API_KEY")] = None,
-    dpi: int = 200,
+    dpi: int | None = None,
     mode: PdfMode = PdfMode.ocr,
     font_path: Annotated[
         str | None,
         typer.Option(help="optional custom TTF; default bundled glyphless font covers all BMP"),
     ] = None,
+    profile: SearchablePdfProfile = SearchablePdfProfile.standard,
 ) -> None:
     with _build_client(base_url, api_key) as client:
         overlay_bytes = client.make_searchable_pdf(
-            pdf_file, dpi=dpi, mode=mode, font_path=font_path
+            pdf_file, dpi=dpi, mode=mode, font_path=font_path, profile=profile
         )
     out.write_bytes(overlay_bytes)
     console.print(f"wrote {len(overlay_bytes):,} bytes -> {out}")

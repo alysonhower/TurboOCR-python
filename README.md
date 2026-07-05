@@ -16,7 +16,8 @@ Sync + async, HTTP + gRPC, layout-aware Markdown rendering, searchable-PDF gener
 ```bash
 pip install turboocr             # HTTP client + CLI + searchable-PDF
 pip install 'turboocr[grpc]'     # add the gRPC transport
-pip install 'turboocr[all]'      # everything optional (currently == [grpc])
+pip install 'turboocr[pdfa]'     # add PDF/A-4 searchable-PDF generation
+pip install 'turboocr[all]'      # everything optional
 ```
 
 Requires Python 3.12+.
@@ -56,6 +57,10 @@ with Client(base_url="http://localhost:8000") as client:
     # Searchable PDF (invisible text overlay)
     overlay = client.make_searchable_pdf("scan.pdf", dpi=200)
     open("scan.searchable.pdf", "wb").write(overlay)
+
+    # PDF/A-4 searchable PDF (requires `pip install 'turboocr[pdfa]'`)
+    pdfa = client.make_searchable_pdf("scan.pdf", profile="pdfa-4", dpi=150)
+    open("scan.pdfa.pdf", "wb").write(pdfa)
 ```
 
 That's the 80% case. Full runnable examples for async, gRPC, batch, retries,
@@ -75,7 +80,8 @@ ACME invoice fixture.
   Markdown construct. Pluggable via `MarkdownStyle`.
 - **Searchable PDFs.** `make_searchable_pdf(...)` overlays an invisible text
   layer aligned to the page geometry. Auto-discovers a Unicode font for
-  non-Latin scripts, or pass `font_path=`.
+  non-Latin scripts, or pass `font_path=`. Install `turboocr[pdfa]` and pass
+  `profile="pdfa-4"` to regenerate PDF/A-4 output at 150 DPI by default.
 - **Production-friendly.** Configurable retry policy (HTTP status + gRPC status
   + `Retry-After`), per-request timeouts, custom `httpx.Client`, `on_request` /
   `on_response` event hooks, uuid7 `X-Request-ID` per call.
@@ -146,6 +152,7 @@ exceptions inherit from `APIConnectionError`.
 turbo-ocr ocr page.png --output markdown
 turbo-ocr pdf doc.pdf --dpi 150 --output json
 turbo-ocr searchable-pdf doc.pdf -o out.pdf --font-path /path/to/font.ttf
+turbo-ocr searchable-pdf doc.pdf -o out.pdf --profile pdfa-4 --dpi 150
 turbo-ocr health --ready
 ```
 
@@ -168,7 +175,8 @@ resolution logs to `turboocr.searchable_pdf`. Every HTTP request sends a uuid7
 ## Learn more
 
 - [`examples/`](examples/) — 13 runnable scripts (each runs against the bundled
-  ACME invoice fixture, no server config needed beyond `TURBO_OCR_BASE_URL`)
+  ACME invoice fixture; the PDF/A-4 searchable-PDF example also needs
+  `turboocr[pdfa]`)
 - [`docs/`](docs/) — full docs source (MkDocs + mkdocstrings, deployed at
   https://aiptimizer.github.io/TurboOCR-python/). Preview locally with
   `uv run --extra docs mkdocs serve -f docs/mkdocs.yml`
@@ -183,6 +191,7 @@ resolution logs to `turboocr.searchable_pdf`. Every HTTP request sends a uuid7
 pytest -q                                                # offline (respx)
 TURBO_OCR_BASE_URL=http://localhost:8000 pytest tests/integration -v
 python examples/03_searchable_pdf.py                         # smoke test
+# includes a PDF/A-4 branch when `turboocr[pdfa]` is installed
 ```
 
 ## License

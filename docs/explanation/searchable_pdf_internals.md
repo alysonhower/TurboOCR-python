@@ -28,3 +28,12 @@ never rendered.
 Embedded font ~10 KB compressed. Invisible text stream scales with OCR
 output: a 2-page invoice with ~70 items adds about 18 KB. Negligible
 on multi-MB scans.
+
+## PDF/A-4 profile
+
+The `pdfa-4` profile uses fpdf2 to generate a new PDF/A-4 document from
+page images plus the invisible OCR text layer. PDF inputs are rendered to
+images at 150 DPI by default, so source PDF vectors, annotations, forms,
+bookmarks, and metadata are not preserved. The bundled glyphless font is
+embedded by default. Use a PDF/A validator such as veraPDF for archival
+acceptance checks.

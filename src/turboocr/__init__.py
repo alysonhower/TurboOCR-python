@@ -106,9 +106,10 @@ __all__ = [
 from .searchable_pdf import (  # noqa: E402, F401
     FontError,
     FontGlyphMissing,
+    SearchablePdfProfile,
 )
 
-__all__.extend(["FontError", "FontGlyphMissing"])
+__all__.extend(["FontError", "FontGlyphMissing", "SearchablePdfProfile"])
 
 # gRPC transport is gated behind the [grpc] extra (grpcio + protobuf). We
 # probe with find_spec so `import turboocr` succeeds even without

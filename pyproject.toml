@@ -44,9 +44,14 @@ grpc = [
     "protobuf>=5.27",
 ]
 # Convenience alias: install everything optional. Currently equivalent to
-# [grpc] but kept distinct so future heavy optional deps land here.
+# [grpc] + [pdfa].
+pdfa = [
+    "fpdf2>=2.8.7",
+    "pypdfium2>=4.30",
+]
 all = [
     "turboocr[grpc]",
+    "turboocr[pdfa]",
 ]
 # API reference site (mkdocs + mkdocstrings + mike for versioned deploys).
 # Build with:   uv run --extra docs mkdocs build -f docs/mkdocs.yml
@@ -65,7 +70,8 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "grpcio-tools>=1.66",
-    "pypdfium2>=4.30",  # examples/sample/generate.py only — renders PDF page to PNG
+    "fpdf2>=2.8.7",
+    "pypdfium2>=4.30",  # PDF/A tests + examples/sample/generate.py page rendering
     "fonttools>=4.55",  # scripts/generate_glyphless_font.py only — build-time font gen
 ]
 
@@ -131,7 +137,16 @@ module = "turboocr._grpc._stubs.*"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = ["reportlab", "reportlab.*", "pypdfium2", "pypdfium2.*", "fontTools", "fontTools.*"]
+module = [
+    "fpdf",
+    "fpdf.*",
+    "reportlab",
+    "reportlab.*",
+    "pypdfium2",
+    "pypdfium2.*",
+    "fontTools",
+    "fontTools.*",
+]
 ignore_missing_imports = true
 
 # Tests get type-discipline relief — strict mypy applies to src/ only,

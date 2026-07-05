@@ -16,7 +16,7 @@ python examples/02_pdf_to_markdown.py
 | 00 | [`00_quickstart.py`](00_quickstart.py) | The smallest useful script — sync image OCR. | [Quickstart](../README.md#quickstart) |
 | 01 | [`01_image_ocr_with_layout.py`](01_image_ocr_with_layout.py) | Image OCR with `layout`, `reading_order`, `include_blocks`; dump blocks as JSON. | [Image OCR](../README.md#image-ocr) |
 | 02 | [`02_pdf_to_markdown.py`](02_pdf_to_markdown.py) | PDF -> Markdown via `render_to_markdown`. | [PDF -> Markdown](../README.md#pdf--markdown) |
-| 03 | [`03_searchable_pdf.py`](03_searchable_pdf.py) | PDF -> searchable PDF, then verified with `pypdf`. | [Searchable PDF](../README.md#searchable-pdf) |
+| 03 | [`03_searchable_pdf.py`](03_searchable_pdf.py) | Standard searchable PDF plus optional PDF/A-4 output with `turboocr[pdfa]`; both verified with `pypdf`. | [Searchable PDF](../README.md#searchable-pdf) |
 | 04 | [`04_async_client.py`](04_async_client.py) | `AsyncClient` + `asyncio.gather` for concurrent OCR. | [Async](../README.md#async) |
 | 05 | [`05_batch.py`](05_batch.py) | `recognize_batch` over multiple images. | [Batch](../README.md#batch) |
 | 06 | [`06_grpc.py`](06_grpc.py) | `GrpcClient` — same surface as `Client`, gRPC transport. | [gRPC](../README.md#grpc) |
@@ -45,5 +45,5 @@ so the examples run out of the box; regenerate with:
 python examples/sample/generate.py
 ```
 
-Requires `reportlab` and `pypdfium2` (both are dev-time only — not runtime
-dependencies of the SDK itself).
+Requires `reportlab` and `pypdfium2`. `reportlab` ships with the default SDK
+install; `pypdfium2` is included in the `dev` and `pdfa` extras.

@@ -18,7 +18,13 @@ from .._core.retry import RetryPolicy
 from ..errors import InvalidParameter
 from ..markdown import MarkdownDocument, MarkdownStyle, render_to_markdown
 from ..models import BatchResponse, HealthStatus, OcrResponse, PdfMode, PdfResponse
-from ..searchable_pdf import make_searchable_pdf as _overlay
+from ..searchable_pdf import (
+    SearchablePdfProfile,
+    default_dpi_for_profile,
+)
+from ..searchable_pdf import (
+    make_searchable_pdf as _overlay,
+)
 from ._kwargs import _httpx_kwargs, _httpx_kwargs_async
 from .retry import execute_with_retries, execute_with_retries_async
 from .specs import (
@@ -649,9 +655,10 @@ class Client(_BaseClient):
         self,
         source: ImageInput,
         *,
-        dpi: int = 200,
+        dpi: int | None = None,
         mode: PdfMode | str | None = None,
         font_path: str | None = None,
+        profile: SearchablePdfProfile | str = SearchablePdfProfile.standard,
     ) -> bytes:
         """Return a PDF with an invisible OCR text layer.
 
@@ -671,13 +678,17 @@ class Client(_BaseClient):
             source: PDF or image bytes / path / file-like object. See
                 `ImageInput`.
             dpi: Rasterization DPI for PDF inputs and the page dimension
-                used when wrapping an image input (default `200`).
+                used when wrapping an image input. Defaults to `200` for
+                the standard profile and `150` for `pdfa-4`.
             mode: PDF reader strategy; see
                 [`recognize_pdf`][turboocr.Client.recognize_pdf]. Ignored
                 for image inputs. `None` uses the server default.
             font_path: Absolute path to a custom `.ttf`/`.otf` to use
                 instead of the bundled glyphless font. Only useful if you
                 specifically want a visible-text overlay.
+            profile: `standard` preserves the existing overlay behavior.
+                `pdfa-4` regenerates the document as PDF/A-4 from page
+                images plus invisible OCR text.
 
         Returns:
             The output PDF as `bytes`, ready to write to disk or stream.
@@ -692,15 +703,16 @@ class Client(_BaseClient):
             ServerError: 5xx response.
         """
         raw = read_image_bytes(source)
+        resolved_dpi = dpi if dpi is not None else default_dpi_for_profile(profile)
         if raw.startswith(b"%PDF-"):
             response: OcrResponse | PdfResponse = self.recognize_pdf(
-                raw, dpi=dpi, mode=mode
+                raw, dpi=resolved_dpi, mode=mode
             )
         else:
             response = self.recognize_image(
                 raw, layout=True, reading_order=True, include_blocks=True
             )
-        return _overlay(raw, response, dpi=dpi, font_path=font_path)
+        return _overlay(raw, response, dpi=resolved_dpi, font_path=font_path, profile=profile)
 
     def to_markdown(
         self,
@@ -957,23 +969,25 @@ class AsyncClient(_BaseClient):
         self,
         source: ImageInput,
         *,
-        dpi: int = 200,
+        dpi: int | None = None,
         mode: PdfMode | str | None = None,
         font_path: str | None = None,
+        profile: SearchablePdfProfile | str = SearchablePdfProfile.standard,
     ) -> bytes:
         """Async equivalent of
         [Client.make_searchable_pdf][turboocr.Client.make_searchable_pdf].
         """
         raw = read_image_bytes(source)
+        resolved_dpi = dpi if dpi is not None else default_dpi_for_profile(profile)
         if raw.startswith(b"%PDF-"):
             response: OcrResponse | PdfResponse = await self.recognize_pdf(
-                raw, dpi=dpi, mode=mode
+                raw, dpi=resolved_dpi, mode=mode
             )
         else:
             response = await self.recognize_image(
                 raw, layout=True, reading_order=True, include_blocks=True
             )
-        return _overlay(raw, response, dpi=dpi, font_path=font_path)
+        return _overlay(raw, response, dpi=resolved_dpi, font_path=font_path, profile=profile)
 
     async def to_markdown(
         self,

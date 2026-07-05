@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
+from collections.abc import Iterator
 from dataclasses import dataclass
+from enum import StrEnum
 from importlib.resources import as_file, files
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Protocol, cast
 
 import pypdf
 from reportlab.lib.utils import ImageReader
@@ -18,6 +21,9 @@ from .errors import ProtocolError
 from .models import OcrResponse, PdfPage, PdfResponse, TextItem
 
 if TYPE_CHECKING:
+    from fpdf import FPDF
+    from fpdf.enums import DocumentCompliance
+    from PIL.Image import Image as PILImage
     from reportlab.pdfgen.canvas import Canvas
 
 
@@ -25,6 +31,8 @@ logger = logging.getLogger("turboocr.searchable_pdf")
 
 PDF_POINTS_PER_INCH: Final[float] = 72.0
 INVISIBLE_TEXT_MODE: Final[int] = 3
+DEFAULT_STANDARD_DPI: Final[int] = 200
+DEFAULT_PDFA_DPI: Final[int] = 150
 
 # Bundled glyphless font: one zero-mark glyph that every BMP codepoint
 # (U+0001..U+FFFF) maps to. Same trick Tesseract's GlyphLessFont uses —
@@ -43,12 +51,70 @@ _REGISTRATION_LOCK: Final[threading.Lock] = threading.Lock()
 _PDF_MAGIC: Final[bytes] = b"%PDF-"
 
 
+class SearchablePdfProfile(StrEnum):
+    """Searchable PDF generation profile."""
+
+    standard = "standard"
+    pdfa_4 = "pdfa-4"
+
+
 @dataclass(frozen=True, slots=True)
 class _OverlayPage:
     width_pt: float
     height_pt: float
     dpi: int
     items: list[TextItem]
+
+
+@dataclass(frozen=True, slots=True)
+class _RasterPage:
+    image: PILImage
+    width_pt: float
+    height_pt: float
+
+
+class _ImageModule(Protocol):
+    def open(self, fp: BytesIO) -> PILImage: ...
+
+
+class _PdfBitmap(Protocol):
+    def to_pil(self) -> PILImage: ...
+
+
+class _PdfPage(Protocol):
+    def get_size(self) -> tuple[float, float]: ...
+
+    def render(self, *, scale: float) -> _PdfBitmap: ...
+
+
+class _PdfDocument(Protocol):
+    def __len__(self) -> int: ...
+
+    def __getitem__(self, index: int) -> _PdfPage: ...
+
+    def close(self) -> None: ...
+
+
+class _PdfDocumentFactory(Protocol):
+    def __call__(self, source: bytes) -> _PdfDocument: ...
+
+
+class _PdfiumModule(Protocol):
+    PdfDocument: _PdfDocumentFactory
+
+
+class _VariablePageFpdf(Protocol):
+    def add_page(self, *, format: tuple[float, float]) -> None: ...
+
+
+class MissingPdfAExtra(ImportError):
+    """Raised when PDF/A generation dependencies are not installed."""
+
+
+def _pdfa_extra_error() -> MissingPdfAExtra:
+    return MissingPdfAExtra(
+        "install turboocr[pdfa] to generate PDF/A-4 searchable PDFs"
+    )
 
 
 def _wrap_image_as_pdf(image_bytes: bytes, *, dpi: int) -> bytes:
@@ -112,6 +178,17 @@ def _resolve_font(font_path: str | None) -> str:
     return _register_glyphless_font()
 
 
+@contextlib.contextmanager
+def _resolved_font_path(font_path: str | None) -> Iterator[tuple[str, str | Path]]:
+    if font_path:
+        logger.debug("turbo-ocr searchable_pdf using custom font %s", font_path)
+        yield Path(font_path).stem or "TurboOcrCustomFont", font_path
+        return
+    font_resource = files("turboocr._data").joinpath(_GLYPHLESS_FONT_FILE)
+    with as_file(font_resource) as path:
+        yield GLYPHLESS_FONT_NAME, Path(path)
+
+
 def _draw_invisible_item(
     canvas: Canvas, item: TextItem, *, font_name: str, dpi: int, page_height_pt: float
 ) -> None:
@@ -146,6 +223,39 @@ def _draw_invisible_item(
     text_obj.textOut(item.text)
     canvas.drawText(text_obj)
     canvas.restoreState()
+
+
+def _draw_invisible_item_fpdf(
+    pdf: FPDF, item: TextItem, *, font_name: str, dpi: int
+) -> None:
+    if not item.text.strip():
+        logger.debug("skipping whitespace-only OCR item id=%s", item.id)
+        return
+    x0, y0, x1, y1 = item.bounding_box.aabb
+    box_w_pt = _px_to_pt(x1 - x0, dpi)
+    box_h_pt = _px_to_pt(y1 - y0, dpi)
+    if box_w_pt <= 0 or box_h_pt <= 0:
+        raise ProtocolError(
+            f"degenerate bbox {item.bounding_box.aabb} for OCR item id={item.id}"
+        )
+
+    font_size = max(1.0, box_h_pt * 0.9)
+    pdf.set_font(font_name, size=font_size)
+    text_width = pdf.get_string_width(item.text)
+    if text_width <= 0:
+        raise FontGlyphMissing(
+            f"font {font_name!r} cannot render OCR item id={item.id} "
+            f"(text={item.text!r}); drop the font_path= override to fall "
+            "back to the bundled glyphless font"
+        )
+
+    from fpdf.enums import TextMode
+
+    text_pt_x = _px_to_pt(x0, dpi)
+    text_pt_y = _px_to_pt(y1, dpi)
+    stretching = 100.0 * box_w_pt / text_width
+    with pdf.local_context(text_mode=TextMode.INVISIBLE, font_stretching=stretching):
+        pdf.text(text_pt_x, text_pt_y, text=item.text)
 
 
 def _px_to_pt(px: float, dpi: int) -> float:
@@ -189,6 +299,22 @@ def _items_for_page(page: PdfPage) -> list[TextItem]:
     return [page.results[i] for i in page.reading_order]
 
 
+def _profile_value(profile: SearchablePdfProfile | str) -> SearchablePdfProfile:
+    try:
+        return SearchablePdfProfile(profile)
+    except ValueError as exc:
+        allowed = ", ".join(p.value for p in SearchablePdfProfile)
+        raise ValueError(f"invalid searchable PDF profile {profile!r}; expected {allowed}") from exc
+
+
+def default_dpi_for_profile(profile: SearchablePdfProfile | str) -> int:
+    """Return the SDK default DPI for a searchable PDF profile."""
+
+    if _profile_value(profile) is SearchablePdfProfile.pdfa_4:
+        return DEFAULT_PDFA_DPI
+    return DEFAULT_STANDARD_DPI
+
+
 def _coerce_to_pdf_response(
     response: PdfResponse | OcrResponse,
     *,
@@ -225,12 +351,134 @@ def _coerce_to_pdf_response(
     )
 
 
+def _load_pdfa_dependencies() -> tuple[type[FPDF], type[DocumentCompliance], _PdfiumModule]:
+    try:
+        import pypdfium2 as pdfium
+        from fpdf import FPDF
+        from fpdf.enums import DocumentCompliance
+    except ImportError as exc:
+        raise _pdfa_extra_error() from exc
+    return FPDF, DocumentCompliance, cast(_PdfiumModule, pdfium)
+
+
+def _load_pillow_image() -> _ImageModule:
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise _pdfa_extra_error() from exc
+    return cast(_ImageModule, Image)
+
+
+def _raster_pages_from_image(original: bytes, *, dpi: int) -> list[_RasterPage]:
+    image_cls = _load_pillow_image()
+    image = image_cls.open(BytesIO(original))
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    width_px, height_px = image.size
+    return [
+        _RasterPage(
+            image=image,
+            width_pt=_px_to_pt(width_px, dpi),
+            height_pt=_px_to_pt(height_px, dpi),
+        )
+    ]
+
+
+def _raster_pages_from_pdf(original: bytes, *, dpi: int) -> list[_RasterPage]:
+    _, _, pdfium = _load_pdfa_dependencies()
+    doc = pdfium.PdfDocument(original)
+    scale = dpi / PDF_POINTS_PER_INCH
+    pages: list[_RasterPage] = []
+    try:
+        for i in range(len(doc)):
+            page = doc[i]
+            width_pt, height_pt = page.get_size()
+            bitmap = page.render(scale=scale)
+            image = bitmap.to_pil()
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            pages.append(_RasterPage(image=image, width_pt=width_pt, height_pt=height_pt))
+    finally:
+        close = getattr(doc, "close", None)
+        if callable(close):
+            close()
+    return pages
+
+
+def _make_searchable_pdfa4(
+    original: bytes,
+    response: PdfResponse | OcrResponse,
+    *,
+    dpi: int,
+    font_path: str | None,
+) -> bytes:
+    fpdf_cls, document_compliance, _ = _load_pdfa_dependencies()
+    raster_pages = (
+        _raster_pages_from_pdf(original, dpi=dpi)
+        if original.startswith(_PDF_MAGIC)
+        else _raster_pages_from_image(original, dpi=dpi)
+    )
+    if isinstance(response, OcrResponse) and raster_pages:
+        page = raster_pages[0]
+        pdf_response = _coerce_to_pdf_response(
+            response,
+            dpi=dpi,
+            page_width_pt=page.width_pt,
+            page_height_pt=page.height_pt,
+        )
+    else:
+        pdf_response = _coerce_to_pdf_response(response, dpi=dpi)
+    if len(raster_pages) != len(pdf_response.pages):
+        hint = ""
+        if isinstance(response, OcrResponse) and len(raster_pages) > 1:
+            hint = (
+                " — you passed an OcrResponse (single-image OCR) for a "
+                "multi-page PDF; call client.recognize_pdf() to get a "
+                "PdfResponse instead"
+            )
+        raise ValueError(
+            f"PDF has {len(raster_pages)} pages but OCR response has "
+            f"{len(pdf_response.pages)}{hint}"
+        )
+
+    items_per_page = [_items_for_page(p) for p in pdf_response.pages]
+    pdf = fpdf_cls(unit="pt", enforce_compliance=document_compliance.PDFA_4)
+    pdf.set_margins(0, 0, 0)
+    pdf.set_auto_page_break(auto=False)
+    with _resolved_font_path(font_path) as (font_name, resolved_font_path):
+        pdf.add_font(font_name, fname=str(resolved_font_path))
+
+        for raster_page, ocr_page, items in zip(
+            raster_pages, pdf_response.pages, items_per_page, strict=True
+        ):
+            cast(_VariablePageFpdf, pdf).add_page(
+                format=(raster_page.width_pt, raster_page.height_pt)
+            )
+            pdf.image(
+                raster_page.image,
+                x=0,
+                y=0,
+                w=raster_page.width_pt,
+                h=raster_page.height_pt,
+            )
+            for item in items:
+                _draw_invisible_item_fpdf(
+                    pdf,
+                    item,
+                    font_name=font_name,
+                    dpi=ocr_page.dpi,
+                )
+
+        return bytes(pdf.output())
+
+
 def make_searchable_pdf(
     original: bytes,
     response: PdfResponse | OcrResponse,
     *,
     dpi: int | None = None,
     font_path: str | None = None,
+    profile: SearchablePdfProfile | str = SearchablePdfProfile.standard,
 ) -> bytes:
     """Overlay an invisible OCR text layer on the input.
 
@@ -247,6 +495,16 @@ def make_searchable_pdf(
     Pass `font_path=<my.ttf>` only if you have a specific reason to embed a
     real visible font instead.
     """
+    resolved_profile = _profile_value(profile)
+    if resolved_profile is SearchablePdfProfile.pdfa_4:
+        resolved_dpi = dpi if dpi is not None else DEFAULT_PDFA_DPI
+        return _make_searchable_pdfa4(
+            original,
+            response,
+            dpi=resolved_dpi,
+            font_path=font_path,
+        )
+
     if not original.startswith(_PDF_MAGIC):
         if dpi is None:
             raise ValueError(
