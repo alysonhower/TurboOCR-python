@@ -88,17 +88,21 @@ def test_recognize_image_sends_options_and_auth() -> None:
 
 
 @respx.mock
-def test_recognize_pixels_sets_dim_headers() -> None:
+def test_recognize_pixels_sets_dim_query_params() -> None:
+    # Dimensions travel as query params — the X-Width/X-Height headers are
+    # deprecated server-side (v3.1+ answers them with `Deprecation: true`).
     route = respx.post("http://t/ocr/pixels").mock(
         return_value=httpx.Response(200, json=_ocr_payload())
     )
     with Client(base_url="http://t") as client:
         client.recognize_pixels(b"\x00" * 30, width=10, height=1, channels=3)
 
-    headers = route.calls.last.request.headers
-    assert headers["X-Width"] == "10"
-    assert headers["X-Height"] == "1"
-    assert headers["X-Channels"] == "3"
+    request = route.calls.last.request
+    params = dict(request.url.params)
+    assert params["width"] == "10"
+    assert params["height"] == "1"
+    assert params["channels"] == "3"
+    assert "X-Width" not in request.headers
 
 
 @respx.mock

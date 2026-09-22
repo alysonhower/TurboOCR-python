@@ -1,4 +1,11 @@
-"""PDF -> Markdown via render_to_markdown."""
+"""PDF -> Markdown, two ways.
+
+1. Server-side (recommended, v3.3+): one call to `/ocr/pdf?markdown=1` — the
+   server's parallel page pipeline renders faithful Markdown (tables → HTML,
+   formulas → LaTeX when loaded, figures embedded as data URIs).
+2. Client-side: `recognize_pdf` + `render_to_markdown` — when you want to
+   customize the rendering with a `MarkdownStyle`.
+"""
 
 from pathlib import Path
 
@@ -7,40 +14,26 @@ from turboocr import Client, render_to_markdown
 PDF = Path(__file__).parent / "sample" / "acme_invoice.pdf"
 
 client = Client(timeout=120.0)
+
+# --- 1. server-side, whole document in one call ---
+md = client.pdf_markdown(PDF, dpi=150)
+print(f"server-side: {len(md)} chars")
+print(md[:300])
+
+# per-page shape for chunked / RAG consumers:
+pages = client.pdf_markdown(PDF, dpi=150, as_pages=True)
+print(f"pages={len(pages.pages)} first_page_chars={len(pages.pages[0].markdown)}")
+
+# --- 2. client-side rendering (customizable via MarkdownStyle) ---
 response = client.recognize_pdf(
     PDF, dpi=150, layout=True, reading_order=True, include_blocks=True
 )
-
 doc = render_to_markdown(response)
-print(f"pages={len(response.pages)} chars={len(doc.markdown)}")
-print("--- markdown (first 500 chars) ---")
-print(doc.markdown[:500])
+print(f"client-side: pages={len(response.pages)} chars={len(doc.markdown)}")
 
 # Output:
-# pages=2 chars=1379
-# --- markdown (first 500 chars) ---
+# server-side: 1710 chars
 # ## ACME Corporation
-#
-# 123 Roadrunner Way, Tumbleweed, AZ 86001 invoices@acme.example · +1 (555) 010-0182
-#
-# Invoice # INV-2026-00482
-#
-# 2026-04-15 Issue date
-#
-# Due date 2026-05-15
-#
-# Customer Coyote Logistics Ltd.
-#
-# Customer # C-1049
-#
-# ## Invoice
-#
-# ## Bill to
-#
-# Coyote Logistics Ltd.
-# Attn: Accounts Payable 742 Mesa Drive, Suite 4B Flagstaff, AZ 86004
-#
-# ## Line items
-#
-# ```
-# # Description Qty Unit price Amount 1 Industrial-grade Rocket Skates (model RS-9) 12 $249.00 $2,988.00 2 4 $89.50 $358.00 Anvil, 100 Ib, pai
+# ...
+# pages=2 first_page_chars=1391
+# client-side: pages=2 chars=1379

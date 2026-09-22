@@ -4,7 +4,14 @@ from enum import StrEnum
 from functools import cached_property
 from typing import Annotated, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 type Point = tuple[int, int]
 type Quad = tuple[Point, Point, Point, Point]
@@ -41,7 +48,6 @@ class LayoutLabel(StrEnum):
 
 class PdfMode(StrEnum):
     ocr = "ocr"
-    text = "text"
     auto = "auto"
     auto_verified = "auto_verified"
     geometric = "geometric"
@@ -159,40 +165,99 @@ _FORMULA_LABELS: Final[frozenset[str]] = frozenset(
 
 
 class Table(_Frozen):
-    id: int
+    """A recognized table.
+
+    Server-recognized tables (`tables=True`, SLANet-Plus) carry `html` (the
+    full `<table>` markup), `layout_id`, and the recognizer `confidence`.
+    Tables synthesized from layout blocks (no table backend requested) carry
+    only the region `text` and `id`.
+    """
+
     bounding_box: BoundingBox
-    text: str
     html: str | None = None
-    cells: list[list[str]] | None = None
+    layout_id: int | None = None
+    confidence: float | None = None
+    # Synthesized-from-blocks fields (legacy shape, kept for compatibility).
+    id: int | None = None
+    text: str = ""
+
+    @field_validator("bounding_box", mode="before")
+    @classmethod
+    def _wrap_bbox(cls, v: object) -> object:
+        if isinstance(v, list):
+            return {"points": v}
+        return v
 
 
 class Formula(_Frozen):
-    id: int
+    """A recognized formula.
+
+    Server-recognized formulas (`formulas=True`, PP-FormulaNet) carry
+    `latex`, `layout_id`, and the recognizer `confidence`; `text` mirrors
+    `latex` so downstream code can treat both sources uniformly. Formulas
+    synthesized from layout blocks carry only the region `text` and `id`.
+    """
+
     bounding_box: BoundingBox
-    text: str
-    is_inline: bool = False
     latex: str | None = None
+    layout_id: int | None = None
+    confidence: float | None = None
+    id: int | None = None
+    text: str = ""
+    is_inline: bool = False
+
+    @field_validator("bounding_box", mode="before")
+    @classmethod
+    def _wrap_bbox(cls, v: object) -> object:
+        if isinstance(v, list):
+            return {"points": v}
+        return v
+
+    def model_post_init(self, __context: object) -> None:
+        if not self.text and self.latex:
+            object.__setattr__(self, "text", self.latex)
 
 
-def _synthesize_tables(blocks: list[Block]) -> list[Table]:
+def _synthesize_tables_raw(blocks: list[dict[str, object]]) -> list[dict[str, object]]:
     return [
-        Table(id=b.id, bounding_box=b.bounding_box, text=b.content)
+        {
+            "id": b.get("id"),
+            "bounding_box": b.get("bounding_box"),
+            "text": b.get("content", ""),
+            "layout_id": b.get("layout_id"),
+        }
         for b in blocks
-        if b.class_name in _TABLE_LABELS
+        if b.get("class") in _TABLE_LABELS
     ]
 
 
-def _synthesize_formulas(blocks: list[Block]) -> list[Formula]:
+def _synthesize_formulas_raw(blocks: list[dict[str, object]]) -> list[dict[str, object]]:
     return [
-        Formula(
-            id=b.id,
-            bounding_box=b.bounding_box,
-            text=b.content,
-            is_inline=b.class_name == LayoutLabel.inline_formula.value,
-        )
+        {
+            "id": b.get("id"),
+            "bounding_box": b.get("bounding_box"),
+            "text": b.get("content", ""),
+            "layout_id": b.get("layout_id"),
+            "is_inline": b.get("class") == LayoutLabel.inline_formula.value,
+        }
         for b in blocks
-        if b.class_name in _FORMULA_LABELS
+        if b.get("class") in _FORMULA_LABELS
     ]
+
+
+def _inject_synthesized(data: object) -> object:
+    """When the server omitted `tables` / `formulas` (backend not requested),
+    synthesize them from block regions so `.tables` / `.formulas` keep
+    working. First-class server fields always win."""
+    if not isinstance(data, dict):
+        return data
+    blocks = data.get("blocks")
+    if isinstance(blocks, list) and blocks and isinstance(blocks[0], dict):
+        if "tables" not in data:
+            data["tables"] = _synthesize_tables_raw(blocks)
+        if "formulas" not in data:
+            data["formulas"] = _synthesize_formulas_raw(blocks)
+    return data
 
 
 class OcrResponse(_Frozen):
@@ -219,6 +284,25 @@ class OcrResponse(_Frozen):
     layout: list[LayoutBox] = Field(default_factory=list)
     reading_order: list[int] = Field(default_factory=list)
     blocks: list[Block] = Field(default_factory=list)
+    # First-class server fields when `tables=True` / `formulas=True` was
+    # requested (SLANet-Plus HTML / PP-FormulaNet LaTeX). When the server
+    # omitted them, the model_validator below synthesizes entries from the
+    # table/formula-labelled blocks so `.tables` / `.formulas` always work.
+    tables: list[Table] = Field(default_factory=list)
+    formulas: list[Formula] = Field(default_factory=list)
+    # Fail-loud degradation contract (server v3.1+): a configured stage that
+    # produced nothing flags itself instead of returning a silent empty.
+    text_degraded: bool = False
+    table_degraded: bool = False
+    formula_degraded: bool = False
+    text_warning: str | None = None
+    table_warning: str | None = None
+    formula_warning: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _synthesize(cls, data: object) -> object:
+        return _inject_synthesized(data)
 
     @cached_property
     def text(self) -> str:
@@ -227,21 +311,6 @@ class OcrResponse(_Frozen):
         if self.reading_order:
             return "\n".join(self.results[i].text for i in self.reading_order)
         return "\n".join(r.text for r in self.results)
-
-    # Synthesized today from blocks where class is table/display_formula/etc.
-    # When the server adds first-class `tables` / `formulas` JSON fields
-    # (TableSR + LaTeX OCR), flip these to regular Field(default_factory=list)
-    # and add a model_validator that synthesizes only when the server omits
-    # them. User code (`for t in resp.tables`) keeps working unchanged.
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def tables(self) -> list[Table]:
-        return _synthesize_tables(self.blocks)
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def formulas(self) -> list[Formula]:
-        return _synthesize_formulas(self.blocks)
 
 
 class BatchSuccess(_Frozen):
@@ -308,8 +377,26 @@ class PdfPage(_Frozen):
     layout: list[LayoutBox] = Field(default_factory=list)
     reading_order: list[int] = Field(default_factory=list)
     blocks: list[Block] = Field(default_factory=list)
+    tables: list[Table] = Field(default_factory=list)
+    formulas: list[Formula] = Field(default_factory=list)
     mode: PdfMode
-    text_layer_quality: str
+    text_layer_quality: str = "absent"
+    # `?autorotate=1`: detected clockwise page rotation (only on de-rotated pages).
+    orientation_deg: int | None = None
+    # `?images=inline`: the rendered page shipped back alongside the OCR result.
+    image_b64: str | None = None
+    image_content_type: str | None = None
+    text_degraded: bool = False
+    table_degraded: bool = False
+    formula_degraded: bool = False
+    text_warning: str | None = None
+    table_warning: str | None = None
+    formula_warning: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _synthesize(cls, data: object) -> object:
+        return _inject_synthesized(data)
 
     def _as_ocr_response(self) -> OcrResponse:
         return OcrResponse(
@@ -317,17 +404,18 @@ class PdfPage(_Frozen):
             layout=self.layout,
             reading_order=self.reading_order,
             blocks=self.blocks,
+            tables=self.tables,
+            formulas=self.formulas,
         )
 
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def tables(self) -> list[Table]:
-        return _synthesize_tables(self.blocks)
+    @cached_property
+    def image_bytes(self) -> bytes | None:
+        """Decoded page image when the request used `images="inline"`."""
+        if self.image_b64 is None:
+            return None
+        import base64
 
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def formulas(self) -> list[Formula]:
-        return _synthesize_formulas(self.blocks)
+        return base64.b64decode(self.image_b64)
 
 
 class PdfResponse(_Frozen):
@@ -365,3 +453,92 @@ class HealthStatus(_Frozen):
     status_code: int
     body: str
     body_json: dict[str, object] | None = None
+
+
+class CapabilityFeatures(_Frozen):
+    layout: bool = False
+    tables: bool = False
+    formulas: bool = False
+    autorotate: bool = False
+
+
+class CapabilityPdf(_Frozen):
+    modes: list[str] = Field(default_factory=list)
+    default_dpi: int | None = None
+    max_pages: int | None = None
+
+
+class CapabilityLimits(_Frozen):
+    max_body_mb: int | None = None
+    max_image_dim: int | None = None
+    max_batch_images: int | None = None
+
+
+class Capabilities(_Frozen):
+    """`GET /capabilities` — what the running server actually loaded.
+
+    Check `features.tables` / `features.formulas` before sending
+    `tables=True` / `formulas=True`: those are strict opt-ins and return
+    `400 TABLE_BACKEND_DISABLED` / `FORMULA_BACKEND_DISABLED` when the
+    backend was not configured at server startup.
+    """
+
+    build: str | None = None
+    features: CapabilityFeatures = Field(default_factory=CapabilityFeatures)
+    pdf: CapabilityPdf = Field(default_factory=CapabilityPdf)
+    limits: CapabilityLimits = Field(default_factory=CapabilityLimits)
+    endpoints: list[str] = Field(default_factory=list)
+
+
+class MarkdownPage(_Frozen):
+    """One page of a server-side PDF → Markdown conversion (`as_pages=True`)."""
+
+    page_index: int
+    markdown: str
+    text_degraded: bool = False
+    table_degraded: bool = False
+    formula_degraded: bool = False
+
+
+class MarkdownPagesResponse(_Frozen):
+    pages: list[MarkdownPage]
+
+    @cached_property
+    def markdown(self) -> str:
+        """All pages joined in order, separated by blank lines."""
+        return "\n\n".join(p.markdown for p in self.pages)
+
+
+class StreamEvent(_Frozen):
+    """One NDJSON line from `POST /ocr/stream`.
+
+    `event` is one of `"meta"`, `"page"`, `"page_error"`, `"error"`,
+    `"end"`. Page events arrive as each page completes — out of order by
+    design; use `page.page_index` to reorder client-side if needed.
+    """
+
+    event: Literal["meta", "page", "page_error", "error", "end"]
+    # meta
+    kind: str | None = None
+    pages: int | None = None
+    dpi: int | None = None
+    mode: str | None = None
+    # page_error / error
+    page_index: int | None = None
+    code: str | None = None
+    # end
+    failed: int | None = None
+
+    @cached_property
+    def page(self) -> PdfPage | None:
+        """The parsed page for `event == "page"`, else `None`."""
+        if self.event != "page":
+            return None
+        extra = self.model_extra or {}
+        data = {k: v for k, v in extra.items()}
+        data["page_index"] = self.page_index
+        if self.dpi is not None:
+            data["dpi"] = self.dpi
+        if self.mode is not None:
+            data["mode"] = self.mode
+        return PdfPage.model_validate(data)

@@ -34,14 +34,16 @@ way to get one running:
 ```bash
 docker run --gpus all -p 8000:8000 -p 50051:50051 \
   -v trt-cache:/home/ocr/.cache/turbo-ocr \
-  -e OCR_LANG=latin \
-  ghcr.io/aiptimizer/turboocr:v2.2.3
+  -e TABLE_BACKEND=slanext -e FORMULA_BACKEND=ppformulanet_s \
+  ghcr.io/aiptimizer/turboocr:latest
 ```
 
-`OCR_LANG=latin` covers English, French, German, Spanish, …. Swap for
-`chinese`, `greek`, `eslav`, `arabic`, `korean`, or `thai` — all baked in.
-The first start primes the TRT engine cache (~30 s); subsequent starts
-are instant.
+The default `OCR_MODEL=tiny` covers Latin + Chinese + Japanese (`small` /
+`medium` trade speed for accuracy); `arabic`, `eslav`, `korean`, `thai`, and
+`greek` are baked in too. The two backend env vars enable table → HTML and
+formula → LaTeX recognition (strict per-request opt-ins). The first start
+builds the TRT engine cache (~90 s on a modern GPU); subsequent starts are
+instant.
 
 ## Image → text & layout
 

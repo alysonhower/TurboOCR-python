@@ -30,19 +30,23 @@ OCR engine — this repo is just the Python client):
 ```bash
 docker run --gpus all -p 8000:8000 -p 50051:50051 \
   -v trt-cache:/home/ocr/.cache/turbo-ocr \
-  -e OCR_LANG=latin \
-  ghcr.io/aiptimizer/turboocr:v2.2.3
+  -e TABLE_BACKEND=slanext -e FORMULA_BACKEND=ppformulanet_s \
+  ghcr.io/aiptimizer/turboocr:latest
 ```
 
-`OCR_LANG=latin` (default) covers English, French, German, Spanish, …. Swap for
-`chinese`, `greek`, `eslav`, `arabic`, `korean`, or `thai` — all are baked in.
-See the [TurboOCR repo](https://github.com/aiptimizer/TurboOCR) for build-from-source,
+The default `OCR_MODEL=tiny` covers Latin + Chinese + Japanese; `small`/`medium`
+trade speed for accuracy, and `arabic`, `eslav`, `korean`, `thai`, `greek` are
+baked in too. The two backend env vars enable table → HTML and formula → LaTeX
+recognition (strict per-request opt-ins). See the
+[TurboOCR repo](https://github.com/aiptimizer/TurboOCR) for build-from-source,
 benchmarks, and the full set of server env vars.
 
 Then recognise an image and turn a PDF into Markdown:
 
 ```python
-from turboocr import Client, render_to_markdown
+from pathlib import Path
+
+from turboocr import Client
 
 with Client(base_url="http://localhost:8000") as client:
     # Image OCR
@@ -50,9 +54,16 @@ with Client(base_url="http://localhost:8000") as client:
     print(f"{len(img.results)} text items, {len(img.blocks)} blocks")
     print(img.text)
 
-    # PDF → Markdown
-    pdf = client.recognize_pdf("paper.pdf", dpi=150, include_blocks=True)
-    print(render_to_markdown(pdf).markdown)
+    # PDF → Markdown file (rendered server-side: tables → HTML, formulas →
+    # LaTeX, figures embedded as data URIs — a real, self-contained .md)
+    Path("paper.md").write_text(client.pdf_markdown("paper.pdf", dpi=150))
+
+    # Tables + formulas as structured fields (strict opt-in, v3.1+ server)
+    rich = client.recognize_image("paper.png", tables=True, formulas=True)
+    for table in rich.tables:
+        print(table.html)
+    for formula in rich.formulas:
+        print(formula.latex)
 
     # Searchable PDF (invisible text overlay)
     overlay = client.make_searchable_pdf("scan.pdf", dpi=200)
@@ -85,14 +96,20 @@ ACME invoice fixture.
 - **Production-friendly.** Configurable retry policy (HTTP status + gRPC status
   + `Retry-After`), per-request timeouts, custom `httpx.Client`, `on_request` /
   `on_response` event hooks, uuid7 `X-Request-ID` per call.
-- **Precise exception hierarchy.** Maps the server's `error_code` to typed
+- **Tables → HTML, formulas → LaTeX.** `tables=True` / `formulas=True`
+  (server v3.1+, strict opt-in) populate `response.tables[*].html` and
+  `response.formulas[*].latex`; `client.capabilities()` tells you what the
+  running server has loaded.
+- **Server-side Markdown.** `client.pdf_markdown(...)` converts a whole PDF in
+  one call (`as_pages=True` for per-page chunks — the RAG-friendly shape);
+  `client.page_markdown(...)` does a single image. `render_to_markdown(...)`
+  stays for client-side, style-customizable rendering.
+- **Per-page streaming.** `client.stream(...)` yields NDJSON events as each
+  page completes, so you can start consuming page 1 while page N is still
+  being OCR'd.
+- **Precise exception hierarchy.** Maps the server's error codes to typed
   exceptions — see [Errors](#errors).
 - **`turbo-ocr` CLI** included in the default install.
-
-Today's server does plain OCR + layout classification. Table-structure and
-LaTeX-formula source are **not** yet emitted; the SDK exposes `page.tables` /
-`page.formulas` as a forward-compatible surface that populates automatically
-when those server features ship.
 
 ## Configuration
 
@@ -127,11 +144,13 @@ TurboOcrError
 │   └── ProtocolError
 ├── InvalidParameter         # 4xx: bad params / headers / dims
 ├── EmptyBody                # 4xx: empty body / batch / PDF
-├── LayoutDisabled           # asked for layout when server has it off
+├── BackendDisabled          # tables/formulas/autorotate without that backend
+│   └── LayoutDisabled       # layout requested with DISABLE_LAYOUT=1
 ├── ImageDecodeError         # bad bytes / bad base64
-├── DimensionsTooLarge       # image / PDF over server limits
-├── PoolExhausted            # "Server at capacity"
+├── DimensionsTooLarge       # image / PDF / batch over server limits
+├── PoolExhausted            # "Server at capacity" / SERVER_BUSY
 ├── PdfRenderError           # PDF rasterization failed
+├── InferenceTimeout         # per-request deadline elapsed (504)
 └── ServerError              # 5xx, no specific code
 ```
 
@@ -143,16 +162,19 @@ exceptions inherit from `APIConnectionError`.
 | `NetworkError: Connection refused` | server not running | start the docker container (above) |
 | `DimensionsTooLarge` | image > `MAX_IMAGE_DIM` (default 16384) | downscale, or raise the server limit |
 | `LayoutDisabled` | server started with `DISABLE_LAYOUT=1` | restart without that env var |
+| `BackendDisabled` | `tables=True`/`formulas=True` without the backend | start with `TABLE_BACKEND=slanext` / `FORMULA_BACKEND=ppformulanet_s` |
 | `PoolExhausted` | server queue full | retry with backoff, or scale `PIPELINE_POOL_SIZE` |
 | `Timeout` | per-request timeout hit | pass `timeout=N`, or raise `RetryPolicy.attempts` |
 
 ## CLI
 
 ```bash
-turbo-ocr ocr page.png --output markdown
+turbo-ocr ocr page.png --output markdown --tables --formulas
 turbo-ocr pdf doc.pdf --dpi 150 --output json
+turbo-ocr markdown doc.pdf -o doc.md        # server-side PDF → Markdown
 turbo-ocr searchable-pdf doc.pdf -o out.pdf --font-path /path/to/font.ttf
 turbo-ocr searchable-pdf doc.pdf -o out.pdf --profile pdfa-4
+turbo-ocr capabilities
 turbo-ocr health --ready
 ```
 
@@ -174,7 +196,7 @@ resolution logs to `turboocr.searchable_pdf`. Every HTTP request sends a uuid7
 
 ## Learn more
 
-- [`examples/`](examples/) — 13 runnable scripts (each runs against the bundled
+- [`examples/`](examples/) — 14 runnable scripts (each runs against the bundled
   ACME invoice fixture; the PDF/A-4 searchable-PDF example also needs
   `turboocr[pdfa]`)
 - [`docs/`](docs/) — full docs source (MkDocs + mkdocstrings, deployed at
@@ -197,3 +219,8 @@ python examples/03_searchable_pdf.py                         # smoke test
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+<p align="center">
+  <a href="https://turboocr.com"><strong>turboocr.com</strong></a> · <a href="https://github.com/aiptimizer/TurboOCR"><strong>⭐ Star TurboOCR on GitHub</strong></a><br>
+  <sub>Sponsored by <a href="https://miruiq.com"><strong>Miruiq</strong></a> — AI-powered data extraction from PDFs and documents — and <a href="https://diaiq.com"><strong>DiaIQ</strong></a>.</sub>
+</p>

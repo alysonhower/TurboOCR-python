@@ -20,6 +20,8 @@ def build_recognize_request(image: bytes, opts: OcrOptions) -> pb2.OCRRequest:
         layout=bool(opts.layout),
         reading_order=bool(opts.reading_order),
         as_blocks=bool(opts.include_blocks),
+        tables=bool(opts.tables),
+        formulas=bool(opts.formulas),
     )
 
 
@@ -39,6 +41,8 @@ def build_recognize_pixels_request(
         layout=bool(opts.layout),
         reading_order=bool(opts.reading_order),
         as_blocks=bool(opts.include_blocks),
+        tables=bool(opts.tables),
+        formulas=bool(opts.formulas),
     )
 
 
@@ -50,6 +54,8 @@ def build_recognize_batch_request(
         layout=bool(opts.layout),
         reading_order=bool(opts.reading_order),
         as_blocks=bool(opts.include_blocks),
+        tables=bool(opts.tables),
+        formulas=bool(opts.formulas),
     )
 
 
@@ -74,4 +80,6 @@ def build_recognize_pdf_request(
         dpi=dpi if dpi is not None else 0,
         layout=bool(opts.layout),
         as_blocks=bool(opts.include_blocks),
+        tables=bool(opts.tables),
+        formulas=bool(opts.formulas),
     )

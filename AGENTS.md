@@ -12,7 +12,7 @@ High-level flow:
 
 1. Public callers import from `src/turboocr/__init__.py` or run the Typer CLI in `src/turboocr/cli.py`.
 2. Inputs are normalized in `src/turboocr/_core/content.py` from paths, bytes, file-like objects, iterables, numpy arrays, or PIL images.
-3. OCR flags are normalized in `src/turboocr/_core/options.py`; `include_blocks` implies `reading_order`, which implies `layout`.
+3. OCR flags are normalized in `src/turboocr/_core/options.py`; `include_blocks` implies `reading_order`, which implies `layout`; `tables` and `formulas` also imply `layout`.
 4. Transport layer builds and sends requests:
    - HTTP: `Client` / `AsyncClient` in `src/turboocr/_http/client.py`, request specs in `src/turboocr/_http/specs.py`.
    - gRPC: `GrpcClient` / `AsyncGrpcClient` in `src/turboocr/_grpc/client.py`, protobuf request builders in `src/turboocr/_grpc/requests.py`.
@@ -70,8 +70,8 @@ Run the local TurboOCR server for examples or integration tests:
 ```bash
 docker run --gpus all -p 8000:8000 -p 50051:50051 \
   -v trt-cache:/home/ocr/.cache/turbo-ocr \
-  -e OCR_LANG=latin \
-  ghcr.io/aiptimizer/turboocr:v2.2.3
+  -e TABLE_BACKEND=slanext -e FORMULA_BACKEND=ppformulanet_s \
+  ghcr.io/aiptimizer/turboocr:latest
 ```
 
 Common checks:
@@ -183,7 +183,7 @@ Release and docs conventions:
   - `TURBO_OCR_BASE_URL` — server origin, defaulting to localhost behavior in client docs.
   - `TURBO_OCR_API_KEY` — optional auth key.
   - `TURBO_OCR_SAMPLE_IMAGE` — optional integration-test sample override.
-- Server language/runtime examples use `OCR_LANG=latin` by default; other server languages are documented in `README.md`.
+- Server v3 uses `OCR_MODEL=tiny` by default (Latin, Chinese, and Japanese); other models and languages are documented in `README.md`.
 - The generated gRPC stubs under `src/turboocr/_grpc/_stubs/` are treated as generated code; do not hand-format them.
 
 ## Testing & QA

@@ -25,6 +25,7 @@ class OutputFormat(StrEnum):
     text = "text"
     markdown = "markdown"
 
+
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
 
@@ -59,11 +60,22 @@ def ocr(
     layout: bool = True,
     reading_order: bool = True,
     include_blocks: bool = True,
+    tables: Annotated[
+        bool, typer.Option(help="table recognition → HTML (needs TABLE_BACKEND)")
+    ] = False,
+    formulas: Annotated[
+        bool, typer.Option(help="formula recognition → LaTeX (needs FORMULA_BACKEND)")
+    ] = False,
     output: Annotated[OutputFormat, typer.Option()] = OutputFormat.markdown,
 ) -> None:
     with _build_client(base_url, api_key) as client:
         response = client.recognize_image(
-            image, layout=layout, reading_order=reading_order, include_blocks=include_blocks
+            image,
+            layout=layout,
+            reading_order=reading_order,
+            include_blocks=include_blocks,
+            tables=tables or None,
+            formulas=formulas or None,
         )
     _emit(response, output)
 
@@ -79,6 +91,13 @@ def pdf(
     layout: bool = True,
     reading_order: bool = True,
     include_blocks: bool = True,
+    tables: Annotated[
+        bool, typer.Option(help="table recognition → HTML (needs TABLE_BACKEND)")
+    ] = False,
+    formulas: Annotated[
+        bool, typer.Option(help="formula recognition → LaTeX (needs FORMULA_BACKEND)")
+    ] = False,
+    autorotate: Annotated[bool, typer.Option(help="straighten rotated pages first")] = False,
     output: Annotated[OutputFormat, typer.Option()] = OutputFormat.markdown,
 ) -> None:
     with _build_client(base_url, api_key) as client:
@@ -89,8 +108,51 @@ def pdf(
             layout=layout,
             reading_order=reading_order,
             include_blocks=include_blocks,
+            tables=tables or None,
+            formulas=formulas or None,
+            autorotate=autorotate or None,
         )
     _emit(response, output)
+
+
+@app.command()
+@_exit_on_sdk_error
+def markdown(
+    document: Annotated[Path, typer.Argument(exists=True, readable=True)],
+    base_url: Annotated[str, typer.Option(envvar="TURBO_OCR_BASE_URL")] = DEFAULT_BASE_URL,
+    api_key: Annotated[str | None, typer.Option(envvar="TURBO_OCR_API_KEY")] = None,
+    out: Annotated[
+        Path | None, typer.Option("--out", "-o", help="write .md here instead of stdout")
+    ] = None,
+    dpi: Annotated[
+        int | None, typer.Option(help="PDF rasterization DPI (server default 100)")
+    ] = None,
+    mode: Annotated[PdfMode | None, typer.Option(help="PDF reader strategy")] = None,
+) -> None:
+    """Server-side Markdown export: image → /ocr/markdown, PDF → /ocr/pdf?markdown=1."""
+    with _build_client(base_url, api_key) as client:
+        if document.suffix.lower() == ".pdf":
+            md = client.pdf_markdown(document, dpi=dpi, mode=mode)
+        else:
+            md = client.page_markdown(document)
+    assert isinstance(md, str)
+    if out is not None:
+        out.write_text(md, encoding="utf-8")
+        console.print(f"wrote {len(md):,} chars -> {out}")
+    else:
+        console.print(Markdown(md))
+
+
+@app.command()
+@_exit_on_sdk_error
+def capabilities(
+    base_url: Annotated[str, typer.Option(envvar="TURBO_OCR_BASE_URL")] = DEFAULT_BASE_URL,
+    api_key: Annotated[str | None, typer.Option(envvar="TURBO_OCR_API_KEY")] = None,
+) -> None:
+    """What the running server has loaded (layout / tables / formulas / autorotate)."""
+    with _build_client(base_url, api_key) as client:
+        caps = client.capabilities()
+    console.print_json(caps.model_dump_json())
 
 
 @app.command(name="searchable-pdf")

@@ -33,11 +33,13 @@ A single recognised word/line with confidence and bounding box.
 
 ::: turboocr.Formula
 
-!!! info "Tables and formulas — partial support today"
+!!! info "Tables and formulas are strict opt-ins"
 
-    As of server v2.2.3, the server detects table and formula **regions** (you
-    get a `bounding_box` and row-major OCR'd `text`) but does **not** emit
-    cell structure or LaTeX source. `Table.html`, `Table.cells`, and
-    `Formula.latex` are always `None`. The SDK is forward-compatible: when the
-    server ships table-structure-recognition and LaTeX OCR, those fields will
-    populate without any SDK code changes.
+    Pass `tables=True` / `formulas=True` (server v3.1+, with
+    `TABLE_BACKEND=slanext` / `FORMULA_BACKEND=ppformulanet_s` loaded) and the
+    server recognizes structure: `Table.html` carries full `<table>` markup
+    and `Formula.latex` the LaTeX source, each with a recognizer
+    `confidence`. Without the opt-in the SDK synthesizes region-level
+    entries from layout blocks (`text` only; `html` / `latex` stay `None`).
+    Requesting a stage the server doesn't have raises `BackendDisabled` —
+    check `client.capabilities()` first.

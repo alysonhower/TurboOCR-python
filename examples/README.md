@@ -23,17 +23,17 @@ python examples/02_pdf_to_markdown.py
 | 07 | [`07_retry_and_timeout.py`](07_retry_and_timeout.py) | Custom `RetryPolicy` + per-request `timeout=`. | [Retry policy](../README.md#retry-policy) |
 | 08 | [`08_custom_httpx_client.py`](08_custom_httpx_client.py) | Pass your own `httpx.Client` for TLS / limits. | [Custom httpx.Client](../README.md#custom-httpxclient) |
 | 09 | [`09_markdown_style.py`](09_markdown_style.py) | Register a custom layout label + renderer on `MarkdownStyle`. | [Custom Markdown labels](../README.md#custom-markdown-labels) |
-| 10 | [`10_tables_and_formulas.py`](10_tables_and_formulas.py) | Iterate `response.tables` / `response.formulas` — see caveat below. | [Tables and formulas](../README.md#tables-and-formulas) |
+| 10 | [`10_tables_and_formulas.py`](10_tables_and_formulas.py) | Real table → HTML + formula → LaTeX recognition (`tables=True` / `formulas=True`, server v3.1+). | [Tables and formulas](../README.md#tables-and-formulas) |
 | 11 | [`11_folder_pipeline.py`](11_folder_pipeline.py) | AsyncClient + `asyncio.Semaphore` for a bounded-concurrency folder pipeline. | — |
 | 12 | [`12_hooks_and_logging.py`](12_hooks_and_logging.py) | httpx event hooks + the SDK's stdlib logger. | [Logging](../README.md#logging) |
+| 13 | [`13_capabilities_and_streaming.py`](13_capabilities_and_streaming.py) | `capabilities()` feature discovery + `stream()` per-page NDJSON streaming. | — |
 
-> **Tables and formulas — partial support today.** As of server v2.2.3, the
-> server detects table and formula *regions* (you get a `bounding_box` and
-> row-major OCR'd `text`) but does **not** emit cell structure or LaTeX
-> source. `Table.html`, `Table.cells`, and `Formula.latex` are always `None`
-> in the current responses. The SDK is forward-compatible: when the server
-> ships table-structure-recognition and LaTeX OCR, those fields will
-> populate without any SDK code changes.
+> **Tables and formulas are strict opt-ins.** Start the server with the
+> backends loaded (`TABLE_BACKEND=slanext`, `FORMULA_BACKEND=ppformulanet_s` —
+> both baked into the Docker image) and pass `tables=True` / `formulas=True`
+> per request. `Table.html` then carries the `<table>` markup and
+> `Formula.latex` the LaTeX source. Requesting a stage the server doesn't
+> have raises `BackendDisabled`; check `client.capabilities()` first.
 
 ## Sample fixtures
 

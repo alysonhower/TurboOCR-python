@@ -47,6 +47,8 @@ exceptions inherit from `APIConnectionError`.
 
 ::: turboocr.EmptyBody
 
+::: turboocr.BackendDisabled
+
 ::: turboocr.LayoutDisabled
 
 ::: turboocr.ImageDecodeError
@@ -56,5 +58,7 @@ exceptions inherit from `APIConnectionError`.
 ::: turboocr.PoolExhausted
 
 ::: turboocr.PdfRenderError
+
+::: turboocr.InferenceTimeout
 
 ::: turboocr.ServerError

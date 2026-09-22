@@ -54,17 +54,19 @@ def recognize_pixels_spec(
     channels: int,
     opts: OcrOptions,
 ) -> RequestSpec:
+    # Dimensions travel as query params — the legacy X-Width/X-Height headers
+    # are deprecated server-side (the server answers them with a
+    # `Deprecation: true` header since v3.1).
+    params = dict(opts.to_query_params())
+    params["width"] = str(width)
+    params["height"] = str(height)
+    params["channels"] = str(channels)
     return RequestSpec(
         method="POST",
         path="/ocr/pixels",
-        params=opts.to_query_params(),
+        params=params,
         content=streamable_content(pixels),
-        headers={
-            "X-Width": str(width),
-            "X-Height": str(height),
-            "X-Channels": str(channels),
-            "Content-Type": "application/octet-stream",
-        },
+        headers={"Content-Type": "application/octet-stream"},
     )
 
 
@@ -78,18 +80,53 @@ def recognize_batch_spec(images: Iterable[ImageInput], *, opts: OcrOptions) -> R
     )
 
 
-def recognize_pdf_spec(
-    pdf: ImageInput,
+def _pdf_params(
     *,
     dpi: int | None,
     mode: PdfMode | str | None,
+    autorotate: bool | None,
     opts: OcrOptions,
-) -> RequestSpec:
+) -> dict[str, str]:
     params = dict(opts.to_query_params())
     if dpi is not None:
         params["dpi"] = str(dpi)
     if mode is not None:
         params["mode"] = mode.value if isinstance(mode, PdfMode) else str(mode)
+    if autorotate is not None:
+        params["autorotate"] = "1" if autorotate else "0"
+    return params
+
+
+def recognize_pdf_spec(
+    pdf: ImageInput,
+    *,
+    dpi: int | None,
+    mode: PdfMode | str | None,
+    autorotate: bool | None = None,
+    opts: OcrOptions,
+) -> RequestSpec:
+    return RequestSpec(
+        method="POST",
+        path="/ocr/pdf",
+        params=_pdf_params(dpi=dpi, mode=mode, autorotate=autorotate, opts=opts),
+        content=streamable_content(pdf),
+        headers={"Content-Type": "application/pdf"},
+    )
+
+
+def pdf_markdown_spec(
+    pdf: ImageInput,
+    *,
+    dpi: int | None,
+    mode: PdfMode | str | None,
+    autorotate: bool | None,
+    as_pages: bool,
+    opts: OcrOptions,
+) -> RequestSpec:
+    params = _pdf_params(dpi=dpi, mode=mode, autorotate=autorotate, opts=opts)
+    params["markdown"] = "1"
+    if as_pages:
+        params["as_pages"] = "1"
     return RequestSpec(
         method="POST",
         path="/ocr/pdf",
@@ -97,6 +134,41 @@ def recognize_pdf_spec(
         content=streamable_content(pdf),
         headers={"Content-Type": "application/pdf"},
     )
+
+
+def page_markdown_spec(image: ImageInput, *, embed: bool) -> RequestSpec:
+    params: dict[str, str] = {}
+    if not embed:
+        params["embed"] = "0"
+    return RequestSpec(
+        method="POST",
+        path="/ocr/markdown",
+        params=params,
+        content=streamable_content(image),
+        headers={"Content-Type": "application/octet-stream"},
+    )
+
+
+def stream_spec(
+    document: ImageInput,
+    *,
+    dpi: int | None,
+    mode: PdfMode | str | None,
+    autorotate: bool | None,
+    opts: OcrOptions,
+) -> RequestSpec:
+    # /ocr/stream sniffs PDF vs image by magic bytes; the same spec serves both.
+    return RequestSpec(
+        method="POST",
+        path="/ocr/stream",
+        params=_pdf_params(dpi=dpi, mode=mode, autorotate=autorotate, opts=opts),
+        content=streamable_content(document),
+        headers={"Content-Type": "application/octet-stream"},
+    )
+
+
+def capabilities_spec() -> RequestSpec:
+    return RequestSpec(method="GET", path="/capabilities")
 
 
 type HealthEndpoint = Literal["health", "live", "ready"]

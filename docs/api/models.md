@@ -37,3 +37,23 @@ Returned by `recognize_batch()`. Per-slot failures are surfaced via
 ## `HealthStatus`
 
 ::: turboocr.HealthStatus
+
+## Capabilities
+
+::: turboocr.Capabilities
+
+::: turboocr.CapabilityFeatures
+
+::: turboocr.CapabilityPdf
+
+::: turboocr.CapabilityLimits
+
+## Server-side Markdown
+
+::: turboocr.MarkdownPagesResponse
+
+::: turboocr.MarkdownPage
+
+## Streaming
+
+::: turboocr.StreamEvent

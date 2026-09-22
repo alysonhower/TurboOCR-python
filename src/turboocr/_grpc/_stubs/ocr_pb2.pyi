@@ -7,7 +7,7 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class OCRRequest(_message.Message):
-    __slots__ = ("image", "layout", "pixels", "width", "height", "channels", "reading_order", "as_blocks")
+    __slots__ = ("image", "layout", "pixels", "width", "height", "channels", "reading_order", "as_blocks", "tables", "formulas")
     IMAGE_FIELD_NUMBER: _ClassVar[int]
     LAYOUT_FIELD_NUMBER: _ClassVar[int]
     PIXELS_FIELD_NUMBER: _ClassVar[int]
@@ -16,6 +16,8 @@ class OCRRequest(_message.Message):
     CHANNELS_FIELD_NUMBER: _ClassVar[int]
     READING_ORDER_FIELD_NUMBER: _ClassVar[int]
     AS_BLOCKS_FIELD_NUMBER: _ClassVar[int]
+    TABLES_FIELD_NUMBER: _ClassVar[int]
+    FORMULAS_FIELD_NUMBER: _ClassVar[int]
     image: bytes
     layout: bool
     pixels: bytes
@@ -24,21 +26,27 @@ class OCRRequest(_message.Message):
     channels: int
     reading_order: bool
     as_blocks: bool
-    def __init__(self, image: _Optional[bytes] = ..., layout: bool = ..., pixels: _Optional[bytes] = ..., width: _Optional[int] = ..., height: _Optional[int] = ..., channels: _Optional[int] = ..., reading_order: bool = ..., as_blocks: bool = ...) -> None: ...
+    tables: bool
+    formulas: bool
+    def __init__(self, image: _Optional[bytes] = ..., layout: bool = ..., pixels: _Optional[bytes] = ..., width: _Optional[int] = ..., height: _Optional[int] = ..., channels: _Optional[int] = ..., reading_order: bool = ..., as_blocks: bool = ..., tables: bool = ..., formulas: bool = ...) -> None: ...
 
 class OCRBatchRequest(_message.Message):
-    __slots__ = ("images", "det_batch_num", "layout", "reading_order", "as_blocks")
+    __slots__ = ("images", "det_batch_num", "layout", "reading_order", "as_blocks", "tables", "formulas")
     IMAGES_FIELD_NUMBER: _ClassVar[int]
     DET_BATCH_NUM_FIELD_NUMBER: _ClassVar[int]
     LAYOUT_FIELD_NUMBER: _ClassVar[int]
     READING_ORDER_FIELD_NUMBER: _ClassVar[int]
     AS_BLOCKS_FIELD_NUMBER: _ClassVar[int]
+    TABLES_FIELD_NUMBER: _ClassVar[int]
+    FORMULAS_FIELD_NUMBER: _ClassVar[int]
     images: _containers.RepeatedScalarFieldContainer[bytes]
     det_batch_num: int
     layout: bool
     reading_order: bool
     as_blocks: bool
-    def __init__(self, images: _Optional[_Iterable[bytes]] = ..., det_batch_num: _Optional[int] = ..., layout: bool = ..., reading_order: bool = ..., as_blocks: bool = ...) -> None: ...
+    tables: bool
+    formulas: bool
+    def __init__(self, images: _Optional[_Iterable[bytes]] = ..., det_batch_num: _Optional[int] = ..., layout: bool = ..., reading_order: bool = ..., as_blocks: bool = ..., tables: bool = ..., formulas: bool = ...) -> None: ...
 
 class BoundingBox(_message.Message):
     __slots__ = ("x", "y")
@@ -59,16 +67,18 @@ class OCRResult(_message.Message):
     def __init__(self, text: _Optional[str] = ..., confidence: _Optional[float] = ..., bounding_box: _Optional[_Iterable[_Union[BoundingBox, _Mapping]]] = ...) -> None: ...
 
 class OCRResponse(_message.Message):
-    __slots__ = ("results", "num_detections", "json_response", "reading_order")
+    __slots__ = ("results", "num_detections", "json_response", "reading_order", "error")
     RESULTS_FIELD_NUMBER: _ClassVar[int]
     NUM_DETECTIONS_FIELD_NUMBER: _ClassVar[int]
     JSON_RESPONSE_FIELD_NUMBER: _ClassVar[int]
     READING_ORDER_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
     results: _containers.RepeatedCompositeFieldContainer[OCRResult]
     num_detections: int
     json_response: bytes
     reading_order: _containers.RepeatedScalarFieldContainer[int]
-    def __init__(self, results: _Optional[_Iterable[_Union[OCRResult, _Mapping]]] = ..., num_detections: _Optional[int] = ..., json_response: _Optional[bytes] = ..., reading_order: _Optional[_Iterable[int]] = ...) -> None: ...
+    error: str
+    def __init__(self, results: _Optional[_Iterable[_Union[OCRResult, _Mapping]]] = ..., num_detections: _Optional[int] = ..., json_response: _Optional[bytes] = ..., reading_order: _Optional[_Iterable[int]] = ..., error: _Optional[str] = ...) -> None: ...
 
 class OCRBatchResponse(_message.Message):
     __slots__ = ("batch_results", "total_images")
@@ -79,18 +89,22 @@ class OCRBatchResponse(_message.Message):
     def __init__(self, batch_results: _Optional[_Iterable[_Union[OCRResponse, _Mapping]]] = ..., total_images: _Optional[int] = ...) -> None: ...
 
 class OCRPDFRequest(_message.Message):
-    __slots__ = ("pdf_data", "mode", "dpi", "layout", "as_blocks")
+    __slots__ = ("pdf_data", "mode", "dpi", "layout", "as_blocks", "tables", "formulas")
     PDF_DATA_FIELD_NUMBER: _ClassVar[int]
     MODE_FIELD_NUMBER: _ClassVar[int]
     DPI_FIELD_NUMBER: _ClassVar[int]
     LAYOUT_FIELD_NUMBER: _ClassVar[int]
     AS_BLOCKS_FIELD_NUMBER: _ClassVar[int]
+    TABLES_FIELD_NUMBER: _ClassVar[int]
+    FORMULAS_FIELD_NUMBER: _ClassVar[int]
     pdf_data: bytes
     mode: str
     dpi: int
     layout: bool
     as_blocks: bool
-    def __init__(self, pdf_data: _Optional[bytes] = ..., mode: _Optional[str] = ..., dpi: _Optional[int] = ..., layout: bool = ..., as_blocks: bool = ...) -> None: ...
+    tables: bool
+    formulas: bool
+    def __init__(self, pdf_data: _Optional[bytes] = ..., mode: _Optional[str] = ..., dpi: _Optional[int] = ..., layout: bool = ..., as_blocks: bool = ..., tables: bool = ..., formulas: bool = ...) -> None: ...
 
 class OCRPDFResponse(_message.Message):
     __slots__ = ("pages",)
@@ -123,7 +137,9 @@ class HealthRequest(_message.Message):
     def __init__(self) -> None: ...
 
 class HealthResponse(_message.Message):
-    __slots__ = ("status",)
+    __slots__ = ("status", "response_mode")
     STATUS_FIELD_NUMBER: _ClassVar[int]
+    RESPONSE_MODE_FIELD_NUMBER: _ClassVar[int]
     status: str
-    def __init__(self, status: _Optional[str] = ...) -> None: ...
+    response_mode: str
+    def __init__(self, status: _Optional[str] = ..., response_mode: _Optional[str] = ...) -> None: ...

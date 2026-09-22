@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
-from collections.abc import Awaitable, Callable, Iterable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator, Mapping
 from types import MappingProxyType, TracebackType
-from typing import Any, Final, NotRequired, Self, TypedDict, TypeVar, Unpack
+from typing import Any, Final, Literal, NotRequired, Self, TypedDict, TypeVar, Unpack, overload
 
 import httpx
 from pydantic import BaseModel
@@ -17,7 +18,16 @@ from .._core.options import OcrOptions
 from .._core.retry import RetryPolicy
 from ..errors import InvalidParameter
 from ..markdown import MarkdownDocument, MarkdownStyle, render_to_markdown
-from ..models import BatchResponse, HealthStatus, OcrResponse, PdfMode, PdfResponse
+from ..models import (
+    BatchResponse,
+    Capabilities,
+    HealthStatus,
+    MarkdownPagesResponse,
+    OcrResponse,
+    PdfMode,
+    PdfResponse,
+    StreamEvent,
+)
 from ..searchable_pdf import (
     SearchablePdfProfile,
     default_dpi_for_profile,
@@ -31,14 +41,18 @@ from .specs import (
     BoolParam,
     HealthEndpoint,
     RequestSpec,
+    capabilities_spec,
     health_spec,
+    page_markdown_spec,
+    pdf_markdown_spec,
     recognize_base64_spec,
     recognize_batch_spec,
     recognize_image_spec,
     recognize_pdf_spec,
     recognize_pixels_spec,
+    stream_spec,
 )
-from .transport import classify_httpx_error, parse_response
+from .transport import classify_httpx_error, parse_response, parse_text_response
 
 logger = logging.getLogger("turboocr")
 
@@ -330,14 +344,16 @@ class Client(_BaseClient):
         layout: BoolParam = None,
         reading_order: BoolParam = None,
         include_blocks: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
         timeout: float | None = None,
     ) -> OcrResponse:
         """OCR a single image and return text plus optional layout structure.
 
         Accepts the broadest possible set of image-shaped inputs: file paths
         (`str` / `Path`), in-memory bytes, file-like objects with `.read()`,
-        numpy arrays, and PIL `Image` instances. The bytes are POSTed as
-        `multipart/form-data`; image decoding happens server-side.
+        numpy arrays, and PIL `Image` instances. The bytes are POSTed as the
+        raw request body; image decoding happens server-side.
 
         Args:
             image: The image to recognize. See
@@ -350,8 +366,16 @@ class Client(_BaseClient):
                 indices into `results` giving human reading order. Requires
                 `layout` (implicitly enabled server-side).
             include_blocks: Pass `True` for paragraph-level blocks with
-                their reading order on `OcrResponse.blocks` (and synthesises
-                `.tables` / `.formulas`).
+                their reading order on `OcrResponse.blocks`.
+            tables: Pass `True` to run table recognition (SLANet-Plus) on
+                layout-detected tables — `OcrResponse.tables[*].html` carries
+                the `<table>` markup. Strict opt-in: the server must have
+                been started with a table backend (`TABLE_BACKEND=slanext`),
+                else the call raises `BackendDisabled`. Auto-enables layout.
+            formulas: Pass `True` to run formula recognition
+                (PP-FormulaNet) — `OcrResponse.formulas[*].latex` carries
+                the LaTeX. Strict opt-in like `tables`
+                (`FORMULA_BACKEND=ppformulanet_s`). Auto-enables layout.
             timeout: Per-request timeout override in seconds. `None` uses
                 the client-level `timeout`.
 
@@ -366,6 +390,9 @@ class Client(_BaseClient):
             ImageDecodeError: The server could not decode the bytes as an
                 image.
             DimensionsTooLarge: Image exceeds the server's pixel budget.
+            BackendDisabled: `tables=True` / `formulas=True` against a
+                server without that backend loaded (check
+                [`capabilities`][turboocr.Client.capabilities]).
             APIConnectionError: Network failure, timeout, or unparseable
                 response after the retry policy is exhausted.
             ServerError: 5xx response that is not retryable.
@@ -376,15 +403,20 @@ class Client(_BaseClient):
 
             with Client(base_url="http://localhost:8000") as client:
                 response = client.recognize_image(
-                    "invoice.png", layout=True, reading_order=True
+                    "paper.png", tables=True, formulas=True
                 )
                 print(response.text)
                 for table in response.tables:
-                    print(table.text)
+                    print(table.html)
+                for formula in response.formulas:
+                    print(formula.latex)
             ```
         """
         return self._dispatch(
-            recognize_image_spec(image, opts=OcrOptions(layout, reading_order, include_blocks)),
+            recognize_image_spec(
+                image,
+                opts=OcrOptions(layout, reading_order, include_blocks, tables, formulas),
+            ),
             OcrResponse,
             timeout=timeout,
         )
@@ -396,6 +428,8 @@ class Client(_BaseClient):
         layout: BoolParam = None,
         reading_order: BoolParam = None,
         include_blocks: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
         timeout: float | None = None,
     ) -> OcrResponse:
         """OCR an image whose bytes are already base64-encoded.
@@ -412,6 +446,10 @@ class Client(_BaseClient):
                 [`recognize_image`][turboocr.Client.recognize_image].
             include_blocks: Same semantics as
                 [`recognize_image`][turboocr.Client.recognize_image].
+            tables: Same semantics as
+                [`recognize_image`][turboocr.Client.recognize_image].
+            formulas: Same semantics as
+                [`recognize_image`][turboocr.Client.recognize_image].
             timeout: Per-request timeout override in seconds.
 
         Returns:
@@ -427,7 +465,9 @@ class Client(_BaseClient):
             ServerError: 5xx response.
         """
         return self._dispatch(
-            recognize_base64_spec(b64, opts=OcrOptions(layout, reading_order, include_blocks)),
+            recognize_base64_spec(
+                b64, opts=OcrOptions(layout, reading_order, include_blocks, tables, formulas)
+            ),
             OcrResponse,
             timeout=timeout,
         )
@@ -442,9 +482,11 @@ class Client(_BaseClient):
         layout: BoolParam = None,
         reading_order: BoolParam = None,
         include_blocks: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
         timeout: float | None = None,
     ) -> OcrResponse:
-        """OCR a raw RGB/RGBA pixel buffer, skipping image-decode on both ends.
+        """OCR a raw BGR/grayscale pixel buffer, skipping image-decode on both ends.
 
         The server's JPEG/PNG decoder is bypassed, which removes ~5-15 ms
         per request for pipelines that already hold uncompressed pixels.
@@ -456,14 +498,18 @@ class Client(_BaseClient):
             width: Image width in pixels. Must match the buffer's row
                 stride.
             height: Image height in pixels.
-            channels: Number of channels per pixel — `3` for RGB
-                (default), `4` for RGBA. Other values are rejected by the
-                server.
+            channels: Number of channels per pixel — `3` for BGR
+                (default) or `1` for grayscale. Other values are rejected
+                by the server.
             layout: Same semantics as
                 [`recognize_image`][turboocr.Client.recognize_image].
             reading_order: Same semantics as
                 [`recognize_image`][turboocr.Client.recognize_image].
             include_blocks: Same semantics as
+                [`recognize_image`][turboocr.Client.recognize_image].
+            tables: Same semantics as
+                [`recognize_image`][turboocr.Client.recognize_image].
+            formulas: Same semantics as
                 [`recognize_image`][turboocr.Client.recognize_image].
             timeout: Per-request timeout override in seconds.
 
@@ -484,7 +530,7 @@ class Client(_BaseClient):
                 width=width,
                 height=height,
                 channels=channels,
-                opts=OcrOptions(layout, reading_order, include_blocks),
+                opts=OcrOptions(layout, reading_order, include_blocks, tables, formulas),
             ),
             OcrResponse,
             timeout=timeout,
@@ -497,6 +543,8 @@ class Client(_BaseClient):
         layout: BoolParam = None,
         reading_order: BoolParam = None,
         include_blocks: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
         timeout: float | None = None,
     ) -> BatchResponse:
         """OCR multiple images in a single round-trip.
@@ -513,6 +561,9 @@ class Client(_BaseClient):
                 [`recognize_image`][turboocr.Client.recognize_image].
             reading_order: Applied uniformly to every image.
             include_blocks: Applied uniformly to every image.
+            tables: Applied uniformly to every image. Same strict opt-in
+                semantics as [`recognize_image`][turboocr.Client.recognize_image].
+            formulas: Applied uniformly to every image.
             timeout: Per-request timeout override in seconds.
 
         Returns:
@@ -545,7 +596,9 @@ class Client(_BaseClient):
             ```
         """
         return self._dispatch(
-            recognize_batch_spec(images, opts=OcrOptions(layout, reading_order, include_blocks)),
+            recognize_batch_spec(
+                images, opts=OcrOptions(layout, reading_order, include_blocks, tables, formulas)
+            ),
             BatchResponse,
             timeout=timeout,
         )
@@ -556,9 +609,12 @@ class Client(_BaseClient):
         *,
         dpi: int = 150,
         mode: PdfMode | str | None = None,
+        autorotate: BoolParam = None,
         layout: BoolParam = None,
         reading_order: BoolParam = None,
         include_blocks: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
         timeout: float | None = None,
     ) -> PdfResponse:
         """OCR every page of a PDF.
@@ -571,23 +627,32 @@ class Client(_BaseClient):
                 more compute.
             mode: PDF reader strategy. One of:
 
-                - `"ocr"` — re-OCR every page, ignoring any embedded text.
-                - `"text"` — use the embedded text layer verbatim; no OCR.
-                - `"auto"` — server decides per page based on whether a
-                  text layer exists.
-                - `"auto_verified"` — like `"auto"` but cross-checks the
-                  text layer against OCR and falls back to OCR when they
-                  disagree.
-                - `"geometric"` — skip text recognition and recover only
-                  layout / reading order.
+                - `"ocr"` — render and OCR every page, ignoring any
+                  embedded text (the server default).
+                - `"geometric"` — prose comes only from the PDF text
+                  layer; pages are never OCR'd (image-only pages return
+                  empty prose). Tables/formulas are still vision-recognized
+                  when requested.
+                - `"auto"` — per page: text layer when trusted, OCR
+                  otherwise.
+                - `"auto_verified"` — runs OCR, then cross-checks each
+                  detection against the PDF text layer and promotes
+                  matches to the native string (GPU build only).
 
-                `None` defers to the server default (currently `"auto"`).
-                Accepts either the [`PdfMode`][turboocr.PdfMode] enum or
-                a plain string.
+                `None` defers to the server default (`"ocr"`). Accepts
+                either the [`PdfMode`][turboocr.PdfMode] enum or a plain
+                string.
+            autorotate: Pass `True` to straighten rotated/scanned pages
+                with the document-orientation model before OCR; de-rotated
+                pages report `orientation_deg`. Requires the server's
+                doc-orientation model (`AUTOROTATE_DISABLED` otherwise).
             layout: Per-page layout. Same semantics as
                 [`recognize_image`][turboocr.Client.recognize_image].
             reading_order: Per-page reading order.
             include_blocks: Per-page block grouping.
+            tables: Per-page table recognition (strict opt-in — see
+                [`recognize_image`][turboocr.Client.recognize_image]).
+            formulas: Per-page formula recognition (strict opt-in).
             timeout: Per-request timeout override in seconds.
 
         Returns:
@@ -596,10 +661,11 @@ class Client(_BaseClient):
             `.text` joiner.
 
         Raises:
-            InvalidParameter: `mode` is not a valid `PdfMode`, or `dpi` is
-                out of the server's accepted range.
+            InvalidParameter: `dpi` is out of the server's accepted range.
             PdfRenderError: Server failed to rasterize the PDF (corrupt
                 file, encrypted without a password, etc.).
+            BackendDisabled: `tables` / `formulas` / `autorotate` requested
+                against a server without that stage loaded.
             APIConnectionError: Network failure or timeout.
             ServerError: 5xx response.
 
@@ -620,22 +686,241 @@ class Client(_BaseClient):
                 pdf,
                 dpi=dpi,
                 mode=mode,
-                opts=OcrOptions(layout, reading_order, include_blocks),
+                autorotate=autorotate,
+                opts=OcrOptions(layout, reading_order, include_blocks, tables, formulas),
             ),
             PdfResponse,
             timeout=timeout,
         )
 
+    def capabilities(self) -> Capabilities:
+        """`GET /capabilities` — feature and route discovery.
+
+        Use it to check whether `tables=True` / `formulas=True` /
+        `autorotate=True` will work before sending them: those are strict
+        opt-ins that hard-error (`BackendDisabled`) when the corresponding
+        backend was not configured at server startup.
+
+        Returns:
+            A [`Capabilities`][turboocr.Capabilities] with `features`
+            (loaded stages), `pdf` (modes, dpi, page cap), `limits`, and
+            the route list.
+        """
+        return self._dispatch(capabilities_spec(), Capabilities)
+
+    def page_markdown(
+        self,
+        image: ImageInput,
+        *,
+        embed: bool = True,
+        timeout: float | None = None,
+    ) -> str:
+        """Server-side single page → faithful Markdown (`POST /ocr/markdown`).
+
+        Runs the full pipeline (layout + reading order forced on; tables →
+        HTML and formulas → LaTeX when their backends are loaded) and
+        returns the page as Markdown rendered by the server — the same
+        output as PP-StructureV3's `save_to_markdown`. GPU builds only.
+
+        For client-side rendering with a customizable
+        [`MarkdownStyle`][turboocr.MarkdownStyle], use
+        [`to_markdown`][turboocr.Client.to_markdown] instead.
+
+        Args:
+            image: Image bytes / path / file-like object.
+            embed: `True` (default) inlines figure crops as base64 `data:`
+                URIs (self-contained `.md`); `False` emits
+                `![](assets/blockN.png)` file-reference links.
+            timeout: Per-request timeout override in seconds.
+
+        Returns:
+            The Markdown document as `str`.
+
+        Raises:
+            BackendDisabled: Server started with `DISABLE_LAYOUT=1`.
+            ImageDecodeError: Bytes are not a decodable image.
+            APIConnectionError: Network failure or timeout.
+            ServerError: 5xx response.
+        """
+        response = self._send(page_markdown_spec(image, embed=embed), timeout=timeout)
+        return parse_text_response(response)
+
+    @overload
+    def pdf_markdown(
+        self,
+        pdf: ImageInput,
+        *,
+        as_pages: Literal[True],
+        dpi: int | None = None,
+        mode: PdfMode | str | None = None,
+        autorotate: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
+        timeout: float | None = None,
+    ) -> MarkdownPagesResponse: ...
+
+    @overload
+    def pdf_markdown(
+        self,
+        pdf: ImageInput,
+        *,
+        as_pages: Literal[False] = False,
+        dpi: int | None = None,
+        mode: PdfMode | str | None = None,
+        autorotate: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
+        timeout: float | None = None,
+    ) -> str: ...
+
+    def pdf_markdown(
+        self,
+        pdf: ImageInput,
+        *,
+        as_pages: bool = False,
+        dpi: int | None = None,
+        mode: PdfMode | str | None = None,
+        autorotate: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
+        timeout: float | None = None,
+    ) -> str | MarkdownPagesResponse:
+        """Server-side whole PDF → Markdown (`POST /ocr/pdf?markdown=1`).
+
+        One call converts the full document using the server's parallel
+        page pipeline — no client-side page splitting. Tables and formulas
+        are recognized whenever their backends are loaded (pass
+        `tables=False` / `formulas=False` to opt out); figure crops are
+        embedded as base64 `data:` URIs.
+
+        Args:
+            pdf: PDF bytes / path / file-like object.
+            as_pages: `False` (default) returns one Markdown `str`, pages
+                concatenated in order with invisible `<!-- page N -->`
+                markers. `True` returns a
+                [`MarkdownPagesResponse`][turboocr.MarkdownPagesResponse]
+                with per-page Markdown + degradation flags — the shape
+                chunked/RAG consumers want.
+            dpi: Rasterization DPI (server default `100`).
+            mode: Same strategies as
+                [`recognize_pdf`][turboocr.Client.recognize_pdf]. Notably
+                `"geometric"` exports a born-digital PDF's exact text layer
+                while still recognizing tables/formulas from the rendered
+                pages.
+            autorotate: Straighten rotated pages first.
+            tables: Opt out of table recognition with `False` (on by
+                default whenever the backend is loaded).
+            formulas: Opt out of formula recognition with `False`.
+            timeout: Per-request timeout override in seconds.
+
+        Returns:
+            `str` when `as_pages=False`, else a
+            [`MarkdownPagesResponse`][turboocr.MarkdownPagesResponse].
+
+        Raises:
+            BackendDisabled: Server started with `DISABLE_LAYOUT=1`.
+            PdfRenderError: Server failed to rasterize the PDF.
+            APIConnectionError: Network failure or timeout.
+            ServerError: 5xx response.
+        """
+        spec = pdf_markdown_spec(
+            pdf,
+            dpi=dpi,
+            mode=mode,
+            autorotate=autorotate,
+            as_pages=as_pages,
+            opts=OcrOptions(tables=tables, formulas=formulas),
+        )
+        if as_pages:
+            return self._dispatch(spec, MarkdownPagesResponse, timeout=timeout)
+        return parse_text_response(self._send(spec, timeout=timeout))
+
+    def stream(
+        self,
+        document: ImageInput,
+        *,
+        dpi: int | None = None,
+        mode: PdfMode | str | None = None,
+        autorotate: BoolParam = None,
+        layout: BoolParam = None,
+        reading_order: BoolParam = None,
+        include_blocks: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
+        timeout: float | None = None,
+    ) -> Iterator[StreamEvent]:
+        """Stream per-page results as they complete (`POST /ocr/stream`, NDJSON).
+
+        One endpoint for PDFs and single images (content-sniffed
+        server-side). Yields a
+        [`StreamEvent`][turboocr.StreamEvent] per NDJSON line: `meta`,
+        then `page` events **as each page finishes — out of order by
+        design** (reorder on `event.page.page_index` if you need to), then
+        `end`. Built for pipelines that want to start consuming page 1
+        while page N is still being OCR'd. GPU builds only.
+
+        Args:
+            document: PDF or image bytes / path / file-like object.
+            dpi: PDF rasterization DPI.
+            mode: PDF reader strategy (see
+                [`recognize_pdf`][turboocr.Client.recognize_pdf]).
+            autorotate: Straighten rotated pages first.
+            layout: Per-page layout (see
+                [`recognize_image`][turboocr.Client.recognize_image]).
+            reading_order: Per-page reading order.
+            include_blocks: Per-page block grouping.
+            tables: Per-page table recognition (strict opt-in).
+            formulas: Per-page formula recognition (strict opt-in).
+            timeout: Timeout for the whole stream in seconds.
+
+        Yields:
+            [`StreamEvent`][turboocr.StreamEvent] — check `.event`;
+            `.page` parses page events into
+            [`PdfPage`][turboocr.PdfPage].
+
+        Raises:
+            APIConnectionError: Network failure or timeout.
+            ServerError: Pre-stream HTTP error. Errors after streaming
+                began arrive as `event == "error"` events instead (the 200
+                is already on the wire).
+
+        Example:
+            ```python
+            with Client() as client:
+                for event in client.stream("doc.pdf", layout=True):
+                    if event.event == "page":
+                        handle(event.page)
+            ```
+        """
+        spec = stream_spec(
+            document,
+            dpi=dpi,
+            mode=mode,
+            autorotate=autorotate,
+            opts=OcrOptions(layout, reading_order, include_blocks, tables, formulas),
+        )
+        kwargs = _httpx_kwargs(spec, request_id=short_request_id(), timeout=timeout)
+        try:
+            with self._http.stream(spec.method, spec.path, **kwargs) as response:
+                if response.is_error:
+                    response.read()
+                    parse_response(response)
+                for line in response.iter_lines():
+                    if line.strip():
+                        yield StreamEvent.model_validate(json.loads(line))
+        except httpx.HTTPError as exc:
+            raise classify_httpx_error(exc) from exc
+
     def health(self, *, ready: bool = False, live: bool = False) -> HealthStatus:
         """Probe the server's health endpoints.
 
         Args:
-            ready: Hit `/readyz` instead of `/healthz`. `/readyz`
+            ready: Hit `/health/ready` instead of `/health`. Readiness
                 additionally requires the pipeline pool to be initialised
-                and the GPU engines loaded.
-            live: Hit `/livez` instead of `/healthz`. `/livez` is the
-                cheapest probe — it returns 200 as long as the process is
-                up.
+                and the GPU engines loaded (it stays 503 during the
+                first-start TensorRT engine build).
+            live: Hit `/health/live` instead of `/health` — the cheapest
+                probe; returns 200 as long as the process is up.
 
         Returns:
             A [`HealthStatus`][turboocr.HealthStatus] carrying the HTTP
@@ -869,11 +1154,16 @@ class AsyncClient(_BaseClient):
         layout: BoolParam = None,
         reading_order: BoolParam = None,
         include_blocks: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
         timeout: float | None = None,
     ) -> OcrResponse:
         """Async equivalent of [`Client.recognize_image`][turboocr.Client.recognize_image]."""
         return await self._dispatch(
-            recognize_image_spec(image, opts=OcrOptions(layout, reading_order, include_blocks)),
+            recognize_image_spec(
+                image,
+                opts=OcrOptions(layout, reading_order, include_blocks, tables, formulas),
+            ),
             OcrResponse,
             timeout=timeout,
         )
@@ -885,11 +1175,15 @@ class AsyncClient(_BaseClient):
         layout: BoolParam = None,
         reading_order: BoolParam = None,
         include_blocks: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
         timeout: float | None = None,
     ) -> OcrResponse:
         """Async equivalent of [`Client.recognize_base64`][turboocr.Client.recognize_base64]."""
         return await self._dispatch(
-            recognize_base64_spec(b64, opts=OcrOptions(layout, reading_order, include_blocks)),
+            recognize_base64_spec(
+                b64, opts=OcrOptions(layout, reading_order, include_blocks, tables, formulas)
+            ),
             OcrResponse,
             timeout=timeout,
         )
@@ -904,6 +1198,8 @@ class AsyncClient(_BaseClient):
         layout: BoolParam = None,
         reading_order: BoolParam = None,
         include_blocks: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
         timeout: float | None = None,
     ) -> OcrResponse:
         """Async equivalent of [`Client.recognize_pixels`][turboocr.Client.recognize_pixels]."""
@@ -913,7 +1209,7 @@ class AsyncClient(_BaseClient):
                 width=width,
                 height=height,
                 channels=channels,
-                opts=OcrOptions(layout, reading_order, include_blocks),
+                opts=OcrOptions(layout, reading_order, include_blocks, tables, formulas),
             ),
             OcrResponse,
             timeout=timeout,
@@ -926,11 +1222,15 @@ class AsyncClient(_BaseClient):
         layout: BoolParam = None,
         reading_order: BoolParam = None,
         include_blocks: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
         timeout: float | None = None,
     ) -> BatchResponse:
         """Async equivalent of [`Client.recognize_batch`][turboocr.Client.recognize_batch]."""
         return await self._dispatch(
-            recognize_batch_spec(images, opts=OcrOptions(layout, reading_order, include_blocks)),
+            recognize_batch_spec(
+                images, opts=OcrOptions(layout, reading_order, include_blocks, tables, formulas)
+            ),
             BatchResponse,
             timeout=timeout,
         )
@@ -941,9 +1241,12 @@ class AsyncClient(_BaseClient):
         *,
         dpi: int = 150,
         mode: PdfMode | str | None = None,
+        autorotate: BoolParam = None,
         layout: BoolParam = None,
         reading_order: BoolParam = None,
         include_blocks: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
         timeout: float | None = None,
     ) -> PdfResponse:
         """Async equivalent of [`Client.recognize_pdf`][turboocr.Client.recognize_pdf]."""
@@ -952,11 +1255,126 @@ class AsyncClient(_BaseClient):
                 pdf,
                 dpi=dpi,
                 mode=mode,
-                opts=OcrOptions(layout, reading_order, include_blocks),
+                autorotate=autorotate,
+                opts=OcrOptions(layout, reading_order, include_blocks, tables, formulas),
             ),
             PdfResponse,
             timeout=timeout,
         )
+
+    async def capabilities(self) -> Capabilities:
+        """Async equivalent of [`Client.capabilities`][turboocr.Client.capabilities]."""
+        return await self._dispatch(capabilities_spec(), Capabilities)
+
+    async def page_markdown(
+        self,
+        image: ImageInput,
+        *,
+        embed: bool = True,
+        timeout: float | None = None,
+    ) -> str:
+        """Async equivalent of [`Client.page_markdown`][turboocr.Client.page_markdown]."""
+        response = await self._send(page_markdown_spec(image, embed=embed), timeout=timeout)
+        return parse_text_response(response)
+
+    @overload
+    async def pdf_markdown(
+        self,
+        pdf: ImageInput,
+        *,
+        as_pages: Literal[True],
+        dpi: int | None = None,
+        mode: PdfMode | str | None = None,
+        autorotate: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
+        timeout: float | None = None,
+    ) -> MarkdownPagesResponse: ...
+
+    @overload
+    async def pdf_markdown(
+        self,
+        pdf: ImageInput,
+        *,
+        as_pages: Literal[False] = False,
+        dpi: int | None = None,
+        mode: PdfMode | str | None = None,
+        autorotate: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
+        timeout: float | None = None,
+    ) -> str: ...
+
+    async def pdf_markdown(
+        self,
+        pdf: ImageInput,
+        *,
+        as_pages: bool = False,
+        dpi: int | None = None,
+        mode: PdfMode | str | None = None,
+        autorotate: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
+        timeout: float | None = None,
+    ) -> str | MarkdownPagesResponse:
+        """Async equivalent of [`Client.pdf_markdown`][turboocr.Client.pdf_markdown]."""
+        spec = pdf_markdown_spec(
+            pdf,
+            dpi=dpi,
+            mode=mode,
+            autorotate=autorotate,
+            as_pages=as_pages,
+            opts=OcrOptions(tables=tables, formulas=formulas),
+        )
+        if as_pages:
+            return await self._dispatch(spec, MarkdownPagesResponse, timeout=timeout)
+        return parse_text_response(await self._send(spec, timeout=timeout))
+
+    async def stream(
+        self,
+        document: ImageInput,
+        *,
+        dpi: int | None = None,
+        mode: PdfMode | str | None = None,
+        autorotate: BoolParam = None,
+        layout: BoolParam = None,
+        reading_order: BoolParam = None,
+        include_blocks: BoolParam = None,
+        tables: BoolParam = None,
+        formulas: BoolParam = None,
+        timeout: float | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        """Async equivalent of [`Client.stream`][turboocr.Client.stream].
+
+        ```python
+        async with AsyncClient() as client:
+            async for event in await client.stream("doc.pdf", layout=True):
+                if event.event == "page":
+                    handle(event.page)
+        ```
+        """
+        spec = stream_spec(
+            document,
+            dpi=dpi,
+            mode=mode,
+            autorotate=autorotate,
+            opts=OcrOptions(layout, reading_order, include_blocks, tables, formulas),
+        )
+        kwargs = _httpx_kwargs_async(spec, request_id=short_request_id(), timeout=timeout)
+
+        async def _gen() -> AsyncIterator[StreamEvent]:
+            try:
+                async with self._http.stream(spec.method, spec.path, **kwargs) as response:
+                    if response.is_error:
+                        await response.aread()
+                        parse_response(response)
+                    async for line in response.aiter_lines():
+                        if line.strip():
+                            yield StreamEvent.model_validate(json.loads(line))
+            except httpx.HTTPError as exc:
+                raise classify_httpx_error(exc) from exc
+
+        return _gen()
 
     async def health(self, *, ready: bool = False, live: bool = False) -> HealthStatus:
         """Async equivalent of [`Client.health`][turboocr.Client.health]."""

@@ -38,8 +38,22 @@ class InvalidParameter(TurboOcrError):
     pass
 
 
-class LayoutDisabled(TurboOcrError):
+class BackendDisabled(TurboOcrError):
+    """The request asked for a stage the server was not started with.
+
+    Raised for `LAYOUT_DISABLED`, `TABLE_BACKEND_DISABLED`,
+    `FORMULA_BACKEND_DISABLED`, and `AUTOROTATE_DISABLED` — strict opt-ins
+    that hard-error instead of returning silently empty results. Check
+    `Client.capabilities()` to see what a server supports.
+    """
+
+
+class LayoutDisabled(BackendDisabled):
     pass
+
+
+class InferenceTimeout(TurboOcrError):
+    """The per-request inference deadline elapsed (HTTP 504)."""
 
 
 class ImageDecodeError(TurboOcrError):
@@ -81,12 +95,22 @@ _CODE_TO_EXC: Final[dict[str, type[TurboOcrError]]] = {
     "EMPTY_BATCH": EmptyBody,
     "EMPTY_PDF": EmptyBody,
     "LAYOUT_DISABLED": LayoutDisabled,
+    "TABLE_BACKEND_DISABLED": BackendDisabled,
+    "FORMULA_BACKEND_DISABLED": BackendDisabled,
+    "AUTOROTATE_DISABLED": BackendDisabled,
     "IMAGE_DECODE_FAILED": ImageDecodeError,
     "BASE64_DECODE_FAILED": ImageDecodeError,
     "DIMENSIONS_TOO_LARGE": DimensionsTooLarge,
+    "PIXELS_TOO_LARGE": DimensionsTooLarge,
+    "BATCH_TOO_LARGE": DimensionsTooLarge,
     "PDF_TOO_LARGE": DimensionsTooLarge,
+    "MISSING_DIMENSIONS": InvalidParameter,
+    "DIMENSION_CONFLICT": InvalidParameter,
     "BODY_SIZE_MISMATCH": InvalidParameter,
     "PDF_RENDER_FAILED": PdfRenderError,
+    "INFERENCE_TIMEOUT": InferenceTimeout,
+    "INFERENCE_ERROR": ServerError,
+    "SERVER_BUSY": PoolExhausted,
     "NOT_READY": ServerError,
 }
 
